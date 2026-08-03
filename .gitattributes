@@ -1,0 +1,5 @@
+# Normalize line endings: always LF, even when files are edited from Windows
+# (prevents `bash: $'\r': command not found` when Hermes executes the scripts).
+* text=auto eol=lf
+*.sh text eol=lf
+*.md text eol=lf
