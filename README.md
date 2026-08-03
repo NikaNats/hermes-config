@@ -25,15 +25,27 @@ Version-controlled Hermes Agent prompt configuration (SOUL.md + personas).
       sudoers-hermes-readonly.example    # Spec 4.3 narrow read-only sudoers (apply manually)
       research-workflow.md               # Spec 4.4 research workflow + injection defenses
       reporting-artifacts.md             # Spec 4.5 report dir convention & template
+      safety-model.md                    # Spec 5.1 layered operational safety model
+      backup-recovery.md                 # Spec 5.2 WSL/config backup + git safety net
+      safe-interaction-patterns.md       # Spec 5.3 read-only-first, plan, evidence patterns
+      grounding-and-verification.md      # Spec 5.4 anti-hallucination grounding rules
+      destructive-commands.md            # Spec 5.5 destructive command policy + trash
+      secrets-hygiene.md                 # Spec 5.6 credential hygiene + .agentignore
+      audit-logging.md                   # Spec 5.7 audit log schema + logrotate
+      validation-checklist.md            # Spec 5.8 build/lint/test + security scans
+      cicd-guardrails.md                 # Spec 5.9 CI/CD allowed/denied + PR workflow
+      prompt-injection-defense.md        # Spec 5.10 injection defense block + rules
     sandbox/
       Dockerfile                         # Spec 3.8 hermes-sandbox image (ubuntu 24.04)
     scripts/
       run-sandbox.sh                     # Spec 3.8 docker runner (resource/network limits)
       bwrap-shell.sh                     # Spec 3.9 bubblewrap restricted shell
       new-report.sh                      # Spec 4.5 dated report artifact creator
+      trash.sh                           # Spec 5.5 trash instead of delete helper
       templates/
         safe-script.sh                   # Spec 3.2 default safe header for generated scripts
         report.md                        # Spec 4.5 Markdown report template
+    .gitignore                           # Spec 5.6 secret/credential ignore patterns
 
 ## Install (symlink into the live Hermes home)
 
