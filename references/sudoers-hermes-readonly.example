@@ -1,0 +1,18 @@
+# Narrow read-only sudo rules for Hermes (spec 4.3)
+
+# User: nika. NOT applied automatically — apply only if you want passwordless
+# read-only diagnostics for exactly these commands. Everything else stays
+# manual. See references/sysadmin-readonly.md for apply/rollback commands.
+#
+# Apply:
+#   sudo install -m 0440 -o root -g root \
+#     ~/src/hermes-config/references/sudoers-hermes-readonly.example \
+#     /etc/sudoers.d/hermes-readonly
+#   sudo visudo -c
+#
+# Rollback:
+#   sudo rm /etc/sudoers.d/hermes-readonly
+#
+# NEVER give the agent broad sudo (e.g. "nika ALL=(ALL) NOPASSWD: ALL").
+
+nika ALL=(root) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/journalctl *, /usr/bin/ss -tulnp

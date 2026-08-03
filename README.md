@@ -14,6 +14,27 @@ Version-controlled Hermes Agent prompt configuration (SOUL.md + personas).
       automation.md                      # Workflow automation persona
     scripts/assemble-prompt.sh           # Concatenates SOUL.md + persona into an active prompt
 
+## Tooling & References (spec 3 & 4)
+
+    references/
+      approval-matrix.md                 # Spec 3.6 approval matrix & defense in depth
+      toolchains.md                      # Spec 3.4 canonical per-language validation commands
+      document-parsing.md                # Spec 4.1 doc/PDF/CSV tooling + analysis prompt
+      log-analysis.md                    # Spec 4.2 log tools, workflow, analysis prompt
+      sysadmin-readonly.md               # Spec 4.3 read-only sysadmin + narrow sudoers notes
+      sudoers-hermes-readonly.example    # Spec 4.3 narrow read-only sudoers (apply manually)
+      research-workflow.md               # Spec 4.4 research workflow + injection defenses
+      reporting-artifacts.md             # Spec 4.5 report dir convention & template
+    sandbox/
+      Dockerfile                         # Spec 3.8 hermes-sandbox image (ubuntu 24.04)
+    scripts/
+      run-sandbox.sh                     # Spec 3.8 docker runner (resource/network limits)
+      bwrap-shell.sh                     # Spec 3.9 bubblewrap restricted shell
+      new-report.sh                      # Spec 4.5 dated report artifact creator
+      templates/
+        safe-script.sh                   # Spec 3.2 default safe header for generated scripts
+        report.md                        # Spec 4.5 Markdown report template
+
 ## Install (symlink into the live Hermes home)
 
     ln -sf ~/src/hermes-config/SOUL.md   ~/.config/hermes/SOUL.md
