@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Bootstrap a project with agent-safety conventions (spec 6.2).
+# Usage: hermes-project-init <project-name>
+# Creates ~/src/<name> + ~/agent/workspaces/<name>, git init, .agentignore.
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+PROJECT_NAME="$(basename "${1:?Usage: hermes-project-init <project-name>}")"
+ROOT="$HOME/src/$PROJECT_NAME"
+WORKSPACE="$HOME/agent/workspaces/$PROJECT_NAME"
+
+mkdir -p "$ROOT"
+mkdir -p "$WORKSPACE"
+
+cd "$ROOT"
+
+if [[ ! -d .git ]]; then
+  git init
+fi
+
+cat > .agentignore <<'EOF'
+.git/
+node_modules/
+.venv/
+venv/
+dist/
+build/
+target/
+.next/
+coverage/
+*.log
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.key
+EOF
+
+git add .agentignore || true
+git commit -m "Add agent ignore file" || true
+
+echo "Project initialized at $ROOT"
+echo "Agent workspace at $WORKSPACE"
