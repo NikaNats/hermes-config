@@ -84,6 +84,8 @@ hermes-config/
 ├── SOUL.md                     # Base identity & safety charter (auto-loaded)
 ├── README.md                   # This file — the master guide & runbook
 ├── .gitignore                  # Secret/credential ignore patterns (spec 5.6)
+├── .gitattributes              # LF line endings everywhere (WSL/Windows interop)
+├── .pre-commit-config.yaml     # gitleaks secret scan hook (enforced on commit)
 ├── prompts/                    # Persona library (modular building blocks)
 │   ├── base.md -> ../SOUL.md   # Relative symlink — base layer is never duplicated
 │   ├── coding.md               # Principal Production Software Engineer
@@ -115,7 +117,7 @@ hermes-config/
 │   ├── preflight-checklist.md  #   Spec 6.3 read-only pre-flight before edits
 │   └── readiness-checklist.md  #   Spec 7 readiness checklist (snapshot)
 ├── sandbox/
-│   └── Dockerfile              # hermes-sandbox image (ubuntu:24.04)
+│   └── Dockerfile              # hermes-sandbox image (ubuntu:26.04, pinned toolchains)
 └── scripts/
     ├── assemble-prompt.sh      # Concatenate SOUL.md + persona -> active prompt
     ├── run-sandbox.sh          # Docker sandbox runner (resource/network limits)
@@ -124,6 +126,8 @@ hermes-config/
     ├── trash.sh                # Trash instead of delete helper
     ├── hermes-project-init     # Safe project bootstrap (spec 6.2)
     ├── readiness-check.sh      # Automated readiness audit (read-only, spec 7)
+    ├── prompt-aliases.sh       # Persona activation fns (HERMES_EPHEMERAL_SYSTEM_PROMPT)
+    ├── setup-logrotate.sh      # Generates logrotate config + apply command (spec 5.7)
     └── templates/
         ├── report.md           # Markdown report template
         └── safe-script.sh      # Default safe header for generated scripts
@@ -240,6 +244,24 @@ id_ed25519
 .ssh/
 .gnupg/
 ```
+
+### Pre-commit secret scan (gitleaks)
+
+`pre-commit` (installed via pipx) + a gitleaks hook block commits that stage
+credentials. Verified on this machine (2026-08-03): the hook **fails (exit 1)**
+when a realistic GitHub PAT / AWS key / Stripe key / Slack token is staged, and
+passes a clean tree.
+
+```bash
+pipx install pre-commit                 # one-time
+cd ~/src/hermes-config
+pre-commit install                      # installs .git/hooks/pre-commit
+pre-commit run gitleaks --all-files     # scan everything now
+```
+
+`.pre-commit-config.yaml` pins gitleaks to a verified release. Gitleaks' default
+config allow-lists obviously-fake/sequential test values by design, so unit-test
+the hook with a realistic token, not `AKIA...EXAMPLE`.
 
 ### Prompt-injection defense
 
@@ -441,7 +463,7 @@ sudo apt install -y bubblewrap
 # Document / log analysis tooling (turns the 2 INFO notes into PASS):
 sudo apt install -y pandoc poppler-utils python3-docx python3-openpyxl csvkit duckdb lnav
 
-# Optional hardening: trash-cli, commit signing key, gitleaks/trufflehog
+# Optional hardening: trash-cli, commit signing key, secret scanners (gitleaks, trufflehog)
 sudo apt install -y trash-cli
 ```
 
@@ -482,7 +504,8 @@ gh repo create hermes-config --public --source=. --remote=origin --push
   cached system prompt. It is auto-loaded whenever present and **completely replaces**
   the default identity (it does not append).
 - A `prompts/` directory is **not** auto-loaded. Persona files are manual building
-  blocks; you activate one by concatenation (base + persona).
+  blocks; activate one at runtime via `HERMES_EPHEMERAL_SYSTEM_PROMPT` (see below),
+  or assemble a static file by concatenation (base + persona).
 - SOUL.md changes apply only to **NEW sessions** — prompt caching freezes the system
   prompt mid-conversation. After editing, run `hermes --ignore-rules` or start a new
   session to test.
@@ -533,6 +556,39 @@ The result is a single Markdown file (SOUL.md + persona) you can feed as the sys
 message, or diff persona layers against each other. Keep personas short to avoid
 context pollution; base wins on safety, persona wins on method.
 
+### Activating a persona at runtime
+
+There is **no `hermes --system-prompt` CLI flag** (verified against v0.19.1
+source). The supported mechanism is the `HERMES_EPHEMERAL_SYSTEM_PROMPT`
+environment variable, read at session start and injected as the **context tier —
+on top of** SOUL.md (which stays the stable identity tier). Verified end-to-end
+with a marker string echoed back by the model.
+
+```bash
+# Session-scoped persona (no config mutation):
+HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat ~/src/hermes-config/prompts/coding.md)" hermes chat
+```
+
+`scripts/prompt-aliases.sh` wraps this in functions — source it from `~/.bashrc`:
+
+```bash
+[ -f ~/src/hermes-config/scripts/prompt-aliases.sh ] && \
+  source ~/src/hermes-config/scripts/prompt-aliases.sh
+
+hermes-coding       # coding persona REPL
+hermes-review       # review persona REPL
+hermes-ops          # ops persona REPL
+hermes-research     # research persona REPL
+hermes-automation   # automation persona REPL
+hermes-production   # production persona REPL
+hermes-base         # plain SOUL.md-only session
+hermes-one coding "implement the auth module"   # one-shot with persona
+```
+
+Persistent alternative: register entries under `agent.personalities` in
+`config.yaml`, then use the `/personality <name>` slash command in-session
+(that writes `agent.system_prompt` into the config — it persists across sessions).
+
 ### Edit → commit → live cycle
 
 1. Edit canonically in `~/src/hermes-config` (symlinks make it live for new sessions).
@@ -552,14 +608,23 @@ context pollution; base wins on safety, persona wins on method.
 | `scripts/hermes-project-init` | Bootstrap `~/src/<name>` + `~/agent/workspaces/<name>` with git init + `.agentignore` | `bash scripts/hermes-project-init <name>` |
 | `scripts/assemble-prompt.sh` | Concatenate SOUL.md + persona into the active prompt | see [§ Personas](#personas) |
 | `scripts/readiness-check.sh` | Read-only production readiness audit (see [§ Audit](#audit)) | `bash scripts/readiness-check.sh` |
-| `sandbox/Dockerfile` | `hermes-sandbox` image: Ubuntu 24.04 + build-essential, git, python3+venv, node/npm, jq, ripgrep | `docker build -t hermes-sandbox sandbox/` |
+| `scripts/prompt-aliases.sh` | Persona activation functions via `HERMES_EPHEMERAL_SYSTEM_PROMPT` | source it, then `hermes-coding` etc. |
+| `scripts/setup-logrotate.sh` | Generates `/tmp/hermes-logrotate` + prints the exact `sudo install` command (agent can't sudo) | `bash scripts/setup-logrotate.sh` |
+| `sandbox/Dockerfile` | `hermes-sandbox` image: Ubuntu 26.04 (host parity) + pinned git 2.53, python3 3.14, node 22, jq, ripgrep | `docker build -t hermes-sandbox sandbox/` |
 
 ### Docker sandbox details
 
 `run-sandbox.sh` env overrides: `HERMES_SANDBOX_IMAGE` (default `hermes-sandbox`),
 `NETWORK` (`none` | `bridge` | `host`, default `none` — no outbound network),
 `MEM_LIMIT` (default `4g`), `CPU_LIMIT` (default `2`). Mounts `$PWD` at `/work`.
-Build once with `docker build -t hermes-sandbox ~/src/hermes-config/sandbox/`.
+Build once with `docker build -t hermes-sandbox ~/src/hermes-config/sandbox/`
+(verified: builds and runs on this machine, 2026-08-03).
+
+Base image is `ubuntu:26.04` — identical to the WSL2 host, eliminating
+"works on my machine" drift. Toolchain versions are pinned and were verified
+against the ubuntu:26.04 apt repo (git 2.53.0, python3 3.14.4, nodejs 22.22.1,
+npm 9.2.0, jq 1.8.1, ripgrep 15.1.0). Relax a pin if a distro update bumps the
+version — or use `apt-get install -y <pkg>` unpinned.
 
 Use it for: dependency installs, untrusted code, experiments. Never for credentials.
 
