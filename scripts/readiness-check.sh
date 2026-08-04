@@ -65,20 +65,19 @@ note "deterministic settings: temperature is model/provider-level (documented ga
 [ "$(hermes config get approvals.mode 2>/dev/null)" = "smart" ] \
   && ok "approvals.mode=smart (explicit tool permissions)" || bad "approvals.mode=smart"
 
-DCNT=$(python3 -c "
-import sys
+DCNT=$(CFG_PATH="$CFG" python3 -c "
+import os
 try:
     import yaml
+    cfg = yaml.safe_load(open(os.environ['CFG_PATH']))
+    deny = (cfg.get('approvals') or {}).get('deny') or []
+    print(len(deny))
 except ImportError:
     # Fallback: lightweight regex (original behavior), tolerant of indentation.
     import re
-    t = open('$CFG').read()
+    t = open(os.environ['CFG_PATH']).read()
     m = re.search(r'deny:\n((?:[ \t]+- .*\n)+)', t)
-    print(len(m.group(1).strip().splitlines()) if m else 0)
-    sys.exit(0)
-cfg = yaml.safe_load(open('$CFG'))
-deny = (cfg.get('approvals') or {}).get('deny') or []
-print(len(deny))" 2>/dev/null || echo 0)
+    print(len(m.group(1).strip().splitlines()) if m else 0)" 2>/dev/null || echo 0)
 [ "$DCNT" -ge 27 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
   || bad "destructive commands blocked (deny list: $DCNT patterns)"
 
@@ -109,7 +108,7 @@ if [ -d "$HERMES_HOME/plugins/hermes-lcm" ]; then
 else
   note "hermes-lcm plugin not installed (optional)"
 fi
-grep -q 'engine: lcm' "$CFG" && ok "context engine = lcm (hermes-lcm active)" \
+grep -qE '^[[:space:]]*engine:[[:space:]]*lcm[[:space:]]*$' "$CFG" && ok "context engine = lcm (hermes-lcm active)" \
   || note "context.engine=lcm not set (hermes-lcm not active)"
 [ -f "$HERMES_HOME/lcm.db" ] && ok "lcm.db present" \
   || note "lcm.db not present (hermes-lcm not active)"

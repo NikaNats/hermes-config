@@ -6,8 +6,9 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 LOGROTATE_FILE="/tmp/hermes-logrotate"
-cat > "$LOGROTATE_FILE" <<'EOF'
-/home/nika/.config/hermes/logs/*.log {
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+cat > "$LOGROTATE_FILE" <<EOF
+$HERMES_HOME/logs/*.log {
     weekly
     rotate 8
     compress

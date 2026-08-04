@@ -13,6 +13,10 @@ IFS=$'\n\t'
 
 IMAGE="${HERMES_SANDBOX_IMAGE:-hermes-sandbox}"
 NETWORK="${NETWORK:-none}"
+if [ "$NETWORK" = "host" ]; then
+  echo "WARNING: NETWORK=host disables sandbox network isolation (container shares the host netns)." >&2
+  echo "         Prefer NETWORK=bridge (outbound NAT) or none (isolated)." >&2
+fi
 MEM_LIMIT="${MEM_LIMIT:-4g}"
 CPU_LIMIT="${CPU_LIMIT:-2}"
 

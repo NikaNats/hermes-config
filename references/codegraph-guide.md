@@ -84,8 +84,14 @@ mcp_servers:
 Optional Hermes-side knob for slow first launch (2-3s WASM grammar load):
 
 ```bash
-hermes mcp add codegraph --command codegraph --args serve --mcp --connect-timeout 30
+hermes mcp add codegraph --command codegraph --connect-timeout 30 --args serve --mcp
 ```
+
+> Order matters: `--connect-timeout` must come BEFORE `--args` (verified with
+> the CLI parser). `--args` is `nargs=REMAINDER` — anything after it is passed
+> verbatim to the stdio command, so
+> `... --args serve --mcp --connect-timeout 30` sends `--connect-timeout 30`
+> to `codegraph serve` instead of Hermes.
 
 ### Method B: CodeGraph's official multi-agent installer
 
@@ -203,8 +209,9 @@ Workflow example:
   `~/.local/bin` (already on `PATH`). The curl route installs to
   `~/.local/bin` too.
 - **MCP connection timeout:** the Hermes-side knob is
-  `hermes mcp add ... --connect-timeout N` (or `connect_timeout` in the
-  server config; defaults: connect 60s, tool-call 120s). CodeGraph's first
+  `hermes mcp add ... --connect-timeout N` (place it BEFORE `--args`; or use
+  `connect_timeout` in the server config; defaults: connect 60s, tool-call
+  120s). CodeGraph's first
   launch can take 2-3s loading WASM grammars; its own handshake timeout is
   tunable via `CODEGRAPH_STARTUP_HANDSHAKE_TIMEOUT_MS` (`0` disables). The
   `--path` flag on `codegraph serve` is real (binds the server to a specific

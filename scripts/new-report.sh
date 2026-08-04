@@ -8,7 +8,7 @@ IFS=$'\n\t'
 
 NAME="$(basename "${1:-report}" | tr -cd '[:alnum:]_.-')"
 [ -z "$NAME" ] && NAME="report"
-DIR="$HOME/agent/reports/$(date +%Y-%m-%d)"
+DIR="$HOME/agent/reports/$(TZ=UTC date +%Y-%m-%d)"
 mkdir -p "$DIR"
 FILE="$DIR/$NAME.md"
 

@@ -14,7 +14,11 @@
 #   - Alternative (persistent, in-session): register entries under
 #     agent.personalities in config.yaml, then use the /personality <name> command.
 
-HERMES_PROMPTS_DIR="${HERMES_PROMPTS_DIR:-$HOME/src/hermes-config/prompts}"
+# Resolve prompts dir relative to this file so the aliases survive any clone
+# location; fall back to the canonical path if the layout is unusual.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HERMES_PROMPTS_DIR="${HERMES_PROMPTS_DIR:-$(dirname "$_SCRIPT_DIR")/prompts}"
+[ -d "$HERMES_PROMPTS_DIR" ] || HERMES_PROMPTS_DIR="$HOME/src/hermes-config/prompts"
 
 hermes-base()       { hermes chat; }
 hermes-coding()     { HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/coding.md")"     hermes chat; }
