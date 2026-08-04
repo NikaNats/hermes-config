@@ -759,6 +759,7 @@ Each `references/*.md` is one spec section (3–7), kept current with the live m
 | Ext | `hermes-lcm-guide.md` | LCM context-memory plugin: install, config, redaction, upgrade |
 | Ext | `codegraph-guide.md` | CodeGraph semantic code-intel MCP: install, index, verify |
 | Ext | `rtk-guide.md` | RTK (Rust Token Killer): output compression, plugin setup, config |
+| Ext | `browser-guide.md` | Browser automation: agent-browser + local Chromium, hybrid routing, SSRF semantics |
 
 ---
 
