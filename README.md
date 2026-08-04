@@ -754,6 +754,7 @@ Each `references/*.md` is one spec section (3–7), kept current with the live m
 | 6.2 | `scripts/hermes-project-init` | safe project bootstrap |
 | 6.3 | `preflight-checklist.md` | read-only pre-flight before edits |
 | 7 | `readiness-checklist.md` + `readiness-check.sh` | production readiness |
+| Ext | `hermes-lcm-guide.md` | LCM context-memory plugin: install, config, redaction, upgrade |
 
 ---
 
