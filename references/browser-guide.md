@@ -277,7 +277,7 @@ without them.
   `hermes_cli/env_loader.py` (dotenv), `hermes_cli/cli_commands_mixin.py`
   (`/browser connect`), `hermes_cli/tools_config.py` (Camofox setup),
   `toolsets.py` (toolset catalog)
-- npm: https://www.npmjs.com/package/agent-browser (Vercel Labs, 0.33.2
+- npm: https://registry.npmjs.org/agent-browser (Vercel Labs, 0.33.2
   latest; Hermes requires >= 0.25.3)
 - Camofox: https://github.com/jo-inc/camofox-browser (npm @askjo/camofox-browser)
 - Hermes docs: https://hermes-agent.nousresearch.com/docs (browser guide)
