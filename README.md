@@ -755,6 +755,7 @@ Each `references/*.md` is one spec section (3–7), kept current with the live m
 | 6.3 | `preflight-checklist.md` | read-only pre-flight before edits |
 | 7 | `readiness-checklist.md` + `readiness-check.sh` | production readiness |
 | Ext | `hermes-lcm-guide.md` | LCM context-memory plugin: install, config, redaction, upgrade |
+| Ext | `codegraph-guide.md` | CodeGraph semantic code-intel MCP: install, index, verify |
 
 ---
 
