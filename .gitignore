@@ -13,3 +13,6 @@ id_ed25519
 .ssh/
 .gnupg/
 .netrc
+
+# CodeGraph index (references/codegraph-guide.md)
+.codegraph/
