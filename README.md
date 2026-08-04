@@ -383,6 +383,8 @@ ln -sf ~/src/hermes-config/scripts/hermes-project-init ~/bin/hermes-project-init
 > ⚠️ **Never set list keys with `hermes config set`** — it coerces scalars only and a
 > `*` inside a scalar deny entry matches *every* command (fnmatch iterates characters),
 > locking the terminal. Write list keys as real YAML (backup first, Hermes not running):
+> Requires PyYAML in system python3 (`python3 -c 'import yaml'`); on a fresh machine run
+> `python3 -m pip install --user pyyaml` (or `sudo apt install -y python3-yaml`) first.
 
 ```bash
 cp ~/.config/hermes/config.yaml ~/.config/hermes/config.yaml.bak

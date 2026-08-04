@@ -1,3 +1,7 @@
+# prompts/base.md is a symlink (base.md -> ../SOUL.md); on Windows checkouts
+# enable core.symlinks (git config --global core.symlinks true) or it
+# materializes as plain text.
+#
 # Normalize line endings: always LF, even when files are edited from Windows
 # (prevents `bash: $'\r': command not found` when Hermes executes the scripts).
 * text=auto eol=lf

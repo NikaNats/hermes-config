@@ -12,6 +12,10 @@ for d in "$HOME/.ssh" "$HOME/.aws" "$HOME/.config/gcloud"; do
   [ -d "$d" ] && TMPFS_ARGS+=(--tmpfs "$d")
 done
 
+# Opt-in network isolation: SANDBOX_NO_NET=1 adds --unshare-net.
+NET_ARGS=()
+[ "${SANDBOX_NO_NET:-0}" = "1" ] && NET_ARGS+=(--unshare-net)
+
 bwrap \
   --ro-bind / / \
   --tmpfs /tmp \
@@ -21,5 +25,6 @@ bwrap \
   --dev /dev \
   --unshare-pid \
   --unshare-uts \
+  "${NET_ARGS[@]}" \
   --die-with-parent \
   bash

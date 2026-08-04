@@ -37,8 +37,9 @@ coverage/
 *.key
 EOF
 
-git add .agentignore || true
-git commit -m "Add agent ignore file" || true
+git add .agentignore 2>/dev/null || true
+git commit -m "Add agent ignore file" 2>/dev/null \
+  || echo "  note: nothing to commit or git identity not configured (set git config --global user.name/email)"
 
 echo "Project initialized at $ROOT"
 echo "Agent workspace at $WORKSPACE"

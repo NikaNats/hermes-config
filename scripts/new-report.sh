@@ -6,7 +6,8 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-NAME="$(basename "${1:-report}")"
+NAME="$(basename "${1:-report}" | tr -cd '[:alnum:]_.-')"
+[ -z "$NAME" ] && NAME="report"
 DIR="$HOME/agent/reports/$(date +%Y-%m-%d)"
 mkdir -p "$DIR"
 FILE="$DIR/$NAME.md"

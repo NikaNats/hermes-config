@@ -8,7 +8,8 @@ IFS=$'\n\t'
 trap 'echo "Command failed at line $LINENO" >&2' ERR
 
 REPO="$HOME/src/hermes-config"
-CFG="$HOME/.config/hermes/config.yaml"
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+CFG="$HERMES_HOME/config.yaml"
 PASS=0; FAIL=0; INFO=0
 
 ok()   { echo "PASS  $1"; PASS=$((PASS+1)); }
@@ -65,10 +66,19 @@ note "deterministic settings: temperature is model/provider-level (documented ga
   && ok "approvals.mode=smart (explicit tool permissions)" || bad "approvals.mode=smart"
 
 DCNT=$(python3 -c "
-import re
-t = open('$CFG').read()
-m = re.search(r'deny:\n((?:    - .*\n)+)', t)
-print(len(m.group(1).strip().splitlines()) if m else 0)" 2>/dev/null || echo 0)
+import sys
+try:
+    import yaml
+except ImportError:
+    # Fallback: lightweight regex (original behavior), tolerant of indentation.
+    import re
+    t = open('$CFG').read()
+    m = re.search(r'deny:\n((?:[ \t]+- .*\n)+)', t)
+    print(len(m.group(1).strip().splitlines()) if m else 0)
+    sys.exit(0)
+cfg = yaml.safe_load(open('$CFG'))
+deny = (cfg.get('approvals') or {}).get('deny') or []
+print(len(deny))" 2>/dev/null || echo 0)
 [ "$DCNT" -ge 27 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
   || bad "destructive commands blocked (deny list: $DCNT patterns)"
 
@@ -77,8 +87,32 @@ note "filesystem ACLs: not natively supported (OS perms + .agentignore instead)"
   && ok "secret dirs excluded (.agentignore + .gitignore)" || bad "secret dirs excluded"
 [ "$(hermes config get security.redact_secrets 2>/dev/null)" = "true" ] \
   && ok "secret redaction enabled" || bad "secret redaction enabled"
-[ -d "$HOME/.config/hermes/logs" ] && ok "logs/audit present (~/.config/hermes/logs)" \
+[ -d "$HERMES_HOME/logs" ] && ok "logs/audit present ($HERMES_HOME/logs)" \
   || bad "logs/audit present"
+
+# ------------------------------------------------- Agent tooling
+sec "Agent Tooling (RTK / LCM)"
+if [ -d "$HERMES_HOME/plugins/rtk-rewrite" ]; then
+  ok "RTK plugin installed ($HERMES_HOME/plugins/rtk-rewrite)"
+else
+  note "RTK plugin not installed (optional: rtk init --agent hermes)"
+fi
+grep -q 'rtk-rewrite' "$CFG" && ok "RTK enabled (plugins.enabled: rtk-rewrite)" \
+  || note "rtk-rewrite not in plugins.enabled (optional)"
+if has rtk; then
+  ok "rtk binary on PATH ($(rtk --version 2>/dev/null | head -1))"
+else
+  note "rtk not on PATH (optional: brew install rtk / install.sh)"
+fi
+if [ -d "$HERMES_HOME/plugins/hermes-lcm" ]; then
+  ok "hermes-lcm plugin installed"
+else
+  note "hermes-lcm plugin not installed (optional)"
+fi
+grep -q 'engine: lcm' "$CFG" && ok "context engine = lcm (hermes-lcm active)" \
+  || note "context.engine=lcm not set (hermes-lcm not active)"
+[ -f "$HERMES_HOME/lcm.db" ] && ok "lcm.db present" \
+  || note "lcm.db not present (hermes-lcm not active)"
 
 # ------------------------------------------------- Coding workflow
 sec "Coding Workflow"
@@ -114,7 +148,7 @@ if sudo -n true 2>/dev/null; then
 else
   ok "no unrestricted sudo (passwordless sudo not available)"
 fi
-grep -q '^    - sudo \*' "$CFG" && ok "sudo denied to agent (deny: 'sudo *')" || bad "sudo denied to agent (deny: 'sudo *')"
+grep -qE '^[[:space:]]+- sudo \*' "$CFG" && ok "sudo denied to agent (deny: 'sudo *')" || bad "sudo denied to agent (deny: 'sudo *')"
 grep -q 'rm -rf /' "$CFG" && grep -q 'rm -rf ~' "$CFG" && ok "no broad rm -rf (deny list)" \
   || bad "no broad rm -rf (deny list)"
 grep -q 'git push --force' "$CFG" && ok "no force-push (deny list)" || bad "no force-push (deny list)"
