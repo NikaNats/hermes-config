@@ -5,8 +5,9 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-LOGROTATE_FILE="/tmp/hermes-logrotate"
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_HOME="${HERMES_HOME:-$HOME/.config/hermes}"
+# mktemp: unpredictable path defeats the /tmp symlink attack on the fixed name
+LOGROTATE_FILE="$(mktemp /tmp/hermes-logrotate.XXXXXX)"
 cat > "$LOGROTATE_FILE" <<EOF
 $HERMES_HOME/logs/*.log {
     weekly

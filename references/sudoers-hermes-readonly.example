@@ -1,3 +1,5 @@
 # Hermes read-only sudo rules (spec 4.3) — user nika.
 # Apply / rollback / rationale: references/sysadmin-readonly.md
-nika ALL=(root) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/journalctl *, /usr/bin/ss -tulnp
+# NOEXEC: blocks pager-based shell escapes (!/bin/sh) inside systemctl/journalctl.
+# NOTE: NOEXEC also blocks the pager itself (less) — output falls back to plain stdout.
+nika ALL=(root) NOEXEC: NOPASSWD: /usr/bin/systemctl status *, /usr/bin/journalctl *, /usr/bin/ss -tulnp

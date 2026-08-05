@@ -15,6 +15,11 @@ PERSONA="${1:-}"
 mkdir -p "$CACHE_DIR"
 
 if [[ -n "$PERSONA" ]]; then
+  # Strict allow-list: blocks path traversal (../../etc/...) and injection
+  if [[ ! "$PERSONA" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "FATAL: Invalid persona name '$PERSONA'. Must match ^[a-zA-Z0-9_-]+$" >&2
+    exit 1
+  fi
   PERSONA_FILE="$PROMPT_DIR/$PERSONA.md"
   if [[ ! -f "$PERSONA_FILE" ]]; then
     echo "Unknown persona: $PERSONA (available: base coding review ops research automation)" >&2

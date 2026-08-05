@@ -9,7 +9,7 @@
 ![Platform: WSL2 / Ubuntu 26.04](https://img.shields.io/badge/platform-WSL2%20%2F%20Ubuntu%2026.04-brightgreen)
 ![Hermes Agent v0.19.1](https://img.shields.io/badge/Hermes%20Agent-v0.19.1-blueviolet)
 ![Model: deepseek-v4-flash-free](https://img.shields.io/badge/model-deepseek--v4--flash--free-informational)
-![Audit: 32 PASS / 0 FAIL](https://img.shields.io/badge/audit-32%20PASS%20%2F%200%20FAIL-2ea44f)
+![Audit: 35 PASS / 1 FAIL](https://img.shields.io/badge/audit-35%20PASS%20%2F%201%20FAIL-red)
 
 ---
 
@@ -63,7 +63,7 @@ if the machine is lost, the whole system can be rebuilt and re-verified with the
                     │  │  SOUL.md ──symlink──► hermes-config      │  │
                     │  │  prompts/ ──symlink─► hermes-config      │  │
                     │  │  config.yaml: approvals.mode=smart       │  │
-                    │  │              approvals.deny: 27 patterns │  │
+                    │  │              approvals.deny: 39 patterns │  │
                     │  │              security.redact_secrets=true│  │
                     │  │  model: opencode-zen / deepseek-v4       │  │
                     │  └──────────────────────────────────────────┘  │
@@ -157,7 +157,7 @@ checked artifact in this repo or on the OS (`references/safety-model.md`).
 Failure model: if one layer fails (a deny pattern too broad or too narrow, a missing
 review, a race), the layers above and below still gate the action.
 
-### approvals.deny — 27 forbidden command patterns
+### approvals.deny — 39 forbidden command patterns
 
 Enforced by Hermes at the tool layer: the agent **cannot run** these at all
 (verified in `~/.config/hermes/config.yaml`).
@@ -178,6 +178,12 @@ Enforced by Hermes at the tool layer: the agent **cannot run** these at all
 | 12 | `mkfs*` | 26 | `fdisk /dev*` |
 | 13 | `shutdown*` | 27 | `parted /dev*` |
 | 14 | `reboot*` | | |
+| 28 | `curl *\|*sh` | 34 | `wget * \| *python*` |
+| 29 | `wget *\|*sh` | 35 | `wget * \| *node*` |
+| 30 | `curl * \| *python*` | 36 | `wget * \| *ruby*` |
+| 31 | `curl * \| *node*` | 37 | `wget * \| *perl*` |
+| 32 | `curl * \| *ruby*` | 38 | `/usr/bin/sudo *` |
+| 33 | `curl * \| *perl*` | 39 | `/bin/sudo *` |
 
 Notes (from `references/destructive-commands.md`):
 
@@ -407,6 +413,10 @@ cfg['approvals'] = {
         'docker system prune*', 'kubectl delete*',
         'terraform destroy*', 'pulumi destroy*',
         'ansible-playbook --check=false*', 'fdisk /dev*', 'parted /dev*',
+        'curl *|*sh', 'wget *|*sh',
+        'curl * | *python*', 'curl * | *node*', 'curl * | *ruby*', 'curl * | *perl*',
+        'wget * | *python*', 'wget * | *node*', 'wget * | *ruby*', 'wget * | *perl*',
+        '/usr/bin/sudo *', '/bin/sudo *',
     ],
     'smart_policy': (
         'Production shell policy. Guardian MUST follow:\n'
@@ -603,38 +613,46 @@ Persistent alternative: register entries under `agent.personalities` in
 
 | Tool | What it does | Usage |
 |---|---|---|
-| `scripts/run-sandbox.sh` | Runs risky work in a Docker container (`hermes-sandbox`): `--init`, non-root user, `no-new-privileges`, memory/CPU limits, **no outbound network by default** | `bash scripts/run-sandbox.sh` |
-| `scripts/bwrap-shell.sh` | Bubblewrap restricted shell: read-only root, tmpfs over `~/.ssh`/`~/.aws`/`~/.config/gcloud`, private pid/uts namespaces, dies with parent | `bash scripts/bwrap-shell.sh` |
+| `scripts/run-sandbox.sh` | Docker Zero-Trust sandbox: `--cap-drop ALL`, read-only rootfs, `no-new-privileges`, non-root user, mem/CPU limits, network `none` by default (`host` hard-blocked), **host mount read-only by default** (`SANDBOX_RW=1` opts in) | `bash scripts/run-sandbox.sh` |
+| `scripts/bwrap-shell.sh` | Bubblewrap restricted shell: refuses `$HOME`/`/`, read-only root, masks applied **after** the PWD bind (last mount wins), tmpfs over ssh/aws/azure/gcloud/gnupg/kube/docker + histories, network isolated by default (`SANDBOX_NET=1` opts in) | `bash scripts/bwrap-shell.sh` |
 | `scripts/trash.sh` | Move to `~/.local/share/Trash/files/` instead of deleting (timestamped, never overwrites) | `bash scripts/trash.sh <path>...` |
 | `scripts/new-report.sh` | Create a dated report under `~/agent/reports/YYYY-MM-DD/` from the template | `bash scripts/new-report.sh <name>` |
 | `scripts/hermes-project-init` | Bootstrap `~/src/<name>` + `~/agent/workspaces/<name>` with git init + `.agentignore` | `bash scripts/hermes-project-init <name>` |
 | `scripts/assemble-prompt.sh` | Concatenate SOUL.md + persona into the active prompt | see [§ Personas](#personas) |
 | `scripts/readiness-check.sh` | Read-only production readiness audit (see [§ Audit](#audit)) | `bash scripts/readiness-check.sh` |
 | `scripts/prompt-aliases.sh` | Persona activation functions via `HERMES_EPHEMERAL_SYSTEM_PROMPT` | source it, then `hermes-coding` etc. |
-| `scripts/setup-logrotate.sh` | Generates `/tmp/hermes-logrotate` + prints the exact `sudo install` command (agent can't sudo) | `bash scripts/setup-logrotate.sh` |
-| `sandbox/Dockerfile` | `hermes-sandbox` image: Ubuntu 26.04 (host parity) + pinned git 2.53, python3 3.14, node 22, jq, ripgrep | `docker build -t hermes-sandbox sandbox/` |
+| `scripts/setup-logrotate.sh` | Generates a randomized `mktemp` logrotate file + prints the exact `sudo install` command (agent can't sudo) | `bash scripts/setup-logrotate.sh` |
+| `sandbox/Dockerfile` | `hermes-sandbox` image: Ubuntu 26.04 (host parity) + wildcard-pinned git 2.53, python3 3.14, node 22, jq, ripgrep | `docker build -t hermes-sandbox sandbox/` |
 
 ### Docker sandbox details
 
 `run-sandbox.sh` env overrides: `HERMES_SANDBOX_IMAGE` (default `hermes-sandbox`),
-`NETWORK` (`none` | `bridge` | `host`, default `none` — no outbound network),
-`MEM_LIMIT` (default `4g`), `CPU_LIMIT` (default `2`). Mounts `$PWD` at `/work`.
+`NETWORK` (`none` | `bridge`; default `none` — **`host` is hard-blocked**),
+`MEM_LIMIT` (default `4g`), `CPU_LIMIT` (default `2`), `SANDBOX_RW` (default `0` →
+`$PWD` mounts at `/work` **read-only**; set `1` for rw). Drops ALL capabilities
+(`--cap-drop ALL`), read-only rootfs, tmpfs `/tmp` + `/scratch` (noexec,nosuid),
+`no-new-privileges`, non-root user.
 Build once with `docker build -t hermes-sandbox ~/src/hermes-config/sandbox/`
 (verified: builds and runs on this machine, 2026-08-03).
 
 Base image is `ubuntu:26.04` — identical to the WSL2 host, eliminating
-"works on my machine" drift. Toolchain versions are pinned and were verified
-against the ubuntu:26.04 apt repo (git 2.53.0, python3 3.14.4, nodejs 22.22.1,
-npm 9.2.0, jq 1.8.1, ripgrep 15.1.0). Relax a pin if a distro update bumps the
-version — or use `apt-get install -y <pkg>` unpinned.
+"works on my machine" drift. Toolchain versions use major.minor wildcard pins
+(`git=1:2.53.*`, `python3=3.14.*`, `nodejs=22.*`, `npm=9.*`, `jq=1.8.*`,
+`ripgrep=15.*`) so apt resolves the current candidate — exact pins caused
+apt-get 404 during disaster recovery. Verified rebuilt 2026-08-05: git 2.53.0,
+python3 3.14.4, node v22.22.1, npm 9.2.0, jq 1.8.1, rg 15.1.0.
 
 Use it for: dependency installs, untrusted code, experiments. Never for credentials.
 
 ### Bubblewrap details
 
-Additive layer only (not a full container): read-only `/`, tmpfs `/tmp`, sensitive
-dirs shadowed with empty tmpfs when present, `--unshare-pid/--uts`, `--die-with-parent`.
-Requires bubblewrap + user namespaces in the kernel.
+Zero-trust additive layer (not a full container): read-only `/`, refuses to run
+from `$HOME` or `/`, `$PWD` bound read-write with sensitive dirs (`~/.ssh`,
+`~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.gnupg`, `~/.kube`, `~/.docker`)
+and files (`~/.netrc`, shell histories) masked **over** the bind — last mount wins —
+plus fresh tmpfs `/tmp` + `/var/tmp`, private pid/uts/ipc namespaces,
+`--unshare-net` by default (`SANDBOX_NET=1` opts in), `--new-session`,
+`--die-with-parent`. Requires bubblewrap + user namespaces in the kernel.
 
 ### Report artifacts & safe script header
 
@@ -662,7 +680,7 @@ FAIL, `1` when any item FAILs.
 bash ~/src/hermes-config/scripts/readiness-check.sh
 ```
 
-### What it checks (38 checks — latest verified result: 32 PASS / 0 FAIL / 6 INFO)
+### What it checks (45 items — latest verified result: 35 PASS / 1 FAIL / 9 INFO)
 
 | Section | PASS | INFO | Sample checks |
 |---|---:|---:|---|
@@ -679,7 +697,7 @@ the script is the source of truth — the doc is a snapshot.
 
 Run the audit before letting Hermes do real work, after any system change, and as the
 final step of every recovery/restore. A commit to this repo should always be able to
-say "readiness: 32 pass, 0 fail".
+say "readiness: 35 pass, 9 info" with only the documented environmental FAIL (apt drift).
 
 ---
 
@@ -722,7 +740,7 @@ Only for local, unpushed work; never force-push shared history (denied by policy
 2. Install Hermes + OpenCode Zen credentials (Phase 2–3).
 3. Clone this repo, re-wire symlinks, restore `config.yaml` + `.agentignore` (Phase 4–5).
 4. Install system tooling (Phase 6).
-5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **32 pass, 0 fail** (Phase 7).
+5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **35 pass, 1 fail (env drift), 9 info** (Phase 7).
 6. Re-import the WSL tar if you want the old filesystem state, or restore project data
    from git remotes.
 
@@ -760,6 +778,7 @@ Each `references/*.md` is one spec section (3–7), kept current with the live m
 | Ext | `codegraph-guide.md` | CodeGraph semantic code-intel MCP: install, index, verify |
 | Ext | `rtk-guide.md` | RTK (Rust Token Killer): output compression, plugin setup, config |
 | Ext | `browser-guide.md` | Browser automation: agent-browser + local Chromium, hybrid routing, SSRF semantics |
+| Ext | `zero-trust-remediation.md` | Zero-trust hardening: sandbox rewrites, deny-list additions, audit fixes + verification (2026-08-05) |
 
 ---
 
@@ -779,4 +798,4 @@ should be added before publishing the repository publicly.
 
 ---
 
-*Maintained by NikaNats. Last audit: 2026-08-03 — `readiness: 32 pass, 0 fail, 6 info`.*
+*Maintained by NikaNats. Last audit: 2026-08-05 — `readiness: 35 pass, 1 fail (apt drift), 9 info`.*

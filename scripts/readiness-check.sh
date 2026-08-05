@@ -8,7 +8,7 @@ IFS=$'\n\t'
 trap 'echo "Command failed at line $LINENO" >&2' ERR
 
 REPO="$HOME/src/hermes-config"
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_HOME="${HERMES_HOME:-$HOME/.config/hermes}"
 CFG="$HERMES_HOME/config.yaml"
 PASS=0; FAIL=0; INFO=0
 
@@ -60,6 +60,8 @@ git -C "$REPO" ls-files 2>/dev/null | grep -q '^SOUL.md$' \
   && ok "config artifacts versioned (repo: $REPO)" || bad "config artifacts versioned"
 git -C "$REPO" ls-files 2>/dev/null | grep -q '^prompts/' \
   && ok "prompts modular & versioned (prompts/)" || bad "prompts modular & versioned"
+[ -L "$REPO/prompts/base.md" ] && [ -e "$REPO/prompts/base.md" ] \
+  && ok "prompts/base.md symlink resolves" || bad "prompts/base.md symlink resolves (dangling or missing)"
 note "deterministic settings: temperature is model/provider-level (documented gap, spec 6.1)"
 
 [ "$(hermes config get approvals.mode 2>/dev/null)" = "smart" ] \
@@ -71,13 +73,17 @@ try:
     import yaml
     cfg = yaml.safe_load(open(os.environ['CFG_PATH']))
     deny = (cfg.get('approvals') or {}).get('deny') or []
-    print(len(deny))
+    print(len(deny) if isinstance(deny, list) else 0)
 except ImportError:
     # Fallback: lightweight regex (original behavior), tolerant of indentation.
     import re
     t = open(os.environ['CFG_PATH']).read()
-    m = re.search(r'deny:\n((?:[ \t]+- .*\n)+)', t)
-    print(len(m.group(1).strip().splitlines()) if m else 0)" 2>/dev/null || echo 0)
+    m = re.search(r'deny:\s*\[([^\]]+)\]', t)
+    if m:
+        print(len([x for x in m.group(1).split(',') if x.strip()]))
+    else:
+        m = re.search(r'deny:\n((?:[ \t]+- .*\n?)+)', t)
+        print(len(m.group(1).strip().splitlines()) if m else 0)" 2>/dev/null || echo 0)
 [ "$DCNT" -ge 27 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
   || bad "destructive commands blocked (deny list: $DCNT patterns)"
 

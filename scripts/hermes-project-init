@@ -5,19 +5,26 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-PROJECT_NAME="$(basename "${1:?Usage: hermes-project-init <project-name>}")"
+PROJECT_NAME="${1:?Usage: hermes-project-init <project-name>}"
+
+# Strict allow-list for project names (blocks basename/.. traversal and
+# shell injection via slashes, spaces, or metacharacters)
+if [[ ! "$PROJECT_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+    echo "FATAL: Invalid project name '$PROJECT_NAME'. Must start with alphanumeric and contain only [a-zA-Z0-9._-]" >&2
+    exit 1
+fi
+
 ROOT="$HOME/src/$PROJECT_NAME"
 WORKSPACE="$HOME/agent/workspaces/$PROJECT_NAME"
 
-mkdir -p "$ROOT"
-mkdir -p "$WORKSPACE"
-
+mkdir -p "$ROOT" "$WORKSPACE"
 cd "$ROOT"
 
 if [[ ! -d .git ]]; then
-  git init
+    git init
 fi
 
+# Safe .agentignore generation (no variable interpolation risks)
 cat > .agentignore <<'EOF'
 .git/
 node_modules/
@@ -38,8 +45,5 @@ coverage/
 EOF
 
 git add .agentignore 2>/dev/null || true
-git commit -m "Add agent ignore file" 2>/dev/null \
-  || echo "  note: nothing to commit or git identity not configured (set git config --global user.name/email)"
-
+git commit -m "Add agent ignore file" 2>/dev/null || echo "note: nothing to commit or git identity not configured"
 echo "Project initialized at $ROOT"
-echo "Agent workspace at $WORKSPACE"

@@ -20,13 +20,17 @@ _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_PROMPTS_DIR="${HERMES_PROMPTS_DIR:-$(dirname "$_SCRIPT_DIR")/prompts}"
 [ -d "$HERMES_PROMPTS_DIR" ] || HERMES_PROMPTS_DIR="$HOME/src/hermes-config/prompts"
 
+_validate_persona() {
+    [[ "$1" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "FATAL: Invalid persona: $1" >&2; return 1; }
+}
+
 hermes-base()       { hermes chat; }
-hermes-coding()     { HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/coding.md")"     hermes chat; }
-hermes-review()     { HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/review.md")"     hermes chat; }
-hermes-ops()        { HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/ops.md")"        hermes chat; }
-hermes-research()   { HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/research.md")"   hermes chat; }
-hermes-automation() { HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/automation.md")" hermes chat; }
-hermes-production() { HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/production.md")" hermes chat; }
+hermes-coding()     { _validate_persona "coding" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/coding.md")"     hermes chat; }
+hermes-review()     { _validate_persona "review" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/review.md")"     hermes chat; }
+hermes-ops()        { _validate_persona "ops" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/ops.md")"        hermes chat; }
+hermes-research()   { _validate_persona "research" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/research.md")"   hermes chat; }
+hermes-automation() { _validate_persona "automation" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/automation.md")" hermes chat; }
+hermes-production() { _validate_persona "production" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/production.md")" hermes chat; }
 
 # One-shot variant: hermes-one coding "build the auth module"
 hermes-one() {
@@ -35,6 +39,7 @@ hermes-one() {
   if [ "$persona" = "base" ]; then
     hermes chat -Q -q "$*"
   else
+    _validate_persona "$persona" || return 1
     HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/$persona.md")" hermes chat -Q -q "$*"
   fi
 }
