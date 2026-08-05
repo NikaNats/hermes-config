@@ -24,13 +24,25 @@ _validate_persona() {
     [[ "$1" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "FATAL: Invalid persona: $1" >&2; return 1; }
 }
 
+# Cat the persona file, aborting (and listing options) if it is missing so a
+# typo never silently degrades to an empty HERMES_EPHEMERAL_SYSTEM_PROMPT.
+_persona_env() {
+    local file="$HERMES_PROMPTS_DIR/$1.md"
+    if [ ! -f "$file" ]; then
+        echo "FATAL: Persona file missing: $file" >&2
+        echo "       Available: $(ls "$HERMES_PROMPTS_DIR"/*.md 2>/dev/null | xargs -n1 basename | sed 's/\.md$//' | tr '\n' ' ')" >&2
+        return 1
+    fi
+    cat "$file"
+}
+
 hermes-base()       { hermes chat; }
-hermes-coding()     { _validate_persona "coding" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/coding.md")"     hermes chat; }
-hermes-review()     { _validate_persona "review" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/review.md")"     hermes chat; }
-hermes-ops()        { _validate_persona "ops" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/ops.md")"        hermes chat; }
-hermes-research()   { _validate_persona "research" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/research.md")"   hermes chat; }
-hermes-automation() { _validate_persona "automation" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/automation.md")" hermes chat; }
-hermes-production() { _validate_persona "production" && HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/production.md")" hermes chat; }
+hermes-coding()     { _validate_persona "coding"     || return 1; local p; p="$(_persona_env coding)"     || return 1; HERMES_EPHEMERAL_SYSTEM_PROMPT="$p"     hermes chat; }
+hermes-review()     { _validate_persona "review"     || return 1; local p; p="$(_persona_env review)"     || return 1; HERMES_EPHEMERAL_SYSTEM_PROMPT="$p"     hermes chat; }
+hermes-ops()        { _validate_persona "ops"        || return 1; local p; p="$(_persona_env ops)"        || return 1; HERMES_EPHEMERAL_SYSTEM_PROMPT="$p"        hermes chat; }
+hermes-research()   { _validate_persona "research"   || return 1; local p; p="$(_persona_env research)"   || return 1; HERMES_EPHEMERAL_SYSTEM_PROMPT="$p"   hermes chat; }
+hermes-automation() { _validate_persona "automation" || return 1; local p; p="$(_persona_env automation)" || return 1; HERMES_EPHEMERAL_SYSTEM_PROMPT="$p" hermes chat; }
+hermes-production() { _validate_persona "production" || return 1; local p; p="$(_persona_env production)" || return 1; HERMES_EPHEMERAL_SYSTEM_PROMPT="$p" hermes chat; }
 
 # One-shot variant: hermes-one coding "build the auth module"
 hermes-one() {
@@ -40,6 +52,8 @@ hermes-one() {
     hermes chat -Q -q "$*"
   else
     _validate_persona "$persona" || return 1
-    HERMES_EPHEMERAL_SYSTEM_PROMPT="$(cat "$HERMES_PROMPTS_DIR/$persona.md")" hermes chat -Q -q "$*"
+    local p
+    p="$(_persona_env "$persona")" || return 1
+    HERMES_EPHEMERAL_SYSTEM_PROMPT="$p" hermes chat -Q -q "$*"
   fi
 }

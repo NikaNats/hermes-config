@@ -16,15 +16,20 @@ case "$PWD" in
 esac
 
 # 2. Define sensitive paths to mask
-DIRS=("$HOME/.ssh" "$HOME/.aws" "$HOME/.azure" "$HOME/.config/gcloud" "$HOME/.gnupg" "$HOME/.kube" "$HOME/.docker")
-FILE_MASKS=("$HOME/.netrc" "$HOME/.bash_history" "$HOME/.zsh_history" "$HOME/.python_history")
+DIRS=("$HOME/.ssh" "$HOME/.aws" "$HOME/.azure" "$HOME/.config/gcloud" "$HOME/.gnupg" "$HOME/.kube" "$HOME/.docker" "$HOME/.config/hermes")
+FILE_MASKS=("$HOME/.netrc" "$HOME/.bash_history" "$HOME/.zsh_history" "$HOME/.python_history" "$HOME/.config/hermes/.env" "$HOME/.config/hermes/lcm.db")
 
 TMPFS_ARGS=()
-for d in "${DIRS[@]}"; do
-    [ -d "$d" ] && TMPFS_ARGS+=(--tmpfs "$d")
-done
+# Order matters: file binds FIRST, then dir tmpfs — the dir tmpfs must be
+# the LAST mount so it covers (hides) both the PWD bind and any file binds
+# inside it (e.g. ~/.config/hermes/.env lives inside the masked dir
+# ~/.config/hermes; a /dev/null bind applied after the tmpfs would win and
+# make the file visible again).
 for f in "${FILE_MASKS[@]}"; do
     [ -f "$f" ] && TMPFS_ARGS+=(--bind /dev/null "$f")
+done
+for d in "${DIRS[@]}"; do
+    [ -d "$d" ] && TMPFS_ARGS+=(--tmpfs "$d")
 done
 
 # 3. Network isolation by default. Opt-in via SANDBOX_NET=1

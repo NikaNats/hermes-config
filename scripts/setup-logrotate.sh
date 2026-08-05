@@ -5,7 +5,9 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-HERMES_HOME="${HERMES_HOME:-$HOME/.config/hermes}"
+# Hermes' canonical default home is ~/.hermes (hermes_constants.py
+# _get_platform_default_hermes_home); HERMES_HOME overrides it when set.
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 # mktemp: unpredictable path defeats the /tmp symlink attack on the fixed name
 LOGROTATE_FILE="$(mktemp /tmp/hermes-logrotate.XXXXXX)"
 cat > "$LOGROTATE_FILE" <<EOF

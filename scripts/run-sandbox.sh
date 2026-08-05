@@ -13,6 +13,27 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+# ── PWD guard (parity with bwrap-shell.sh) ──────────────────────────
+# Refuse to sandbox from broad directories. Even with --cap-drop ALL
+# and a non-root user, a rw bind of / or $HOME exposes the full user
+# tree to untrusted code.
+case "$PWD" in
+    "$HOME"|"$HOME/"|"/")
+        echo "FATAL: Refusing to sandbox from '$PWD'." >&2
+        echo "       cd into a specific project directory first." >&2
+        exit 1
+        ;;
+esac
+
+# Guard against colons in PWD (Docker -v uses ':' as delimiter)
+case "$PWD" in
+    *:*)
+        echo "FATAL: PWD contains ':' — Docker volume syntax break." >&2
+        exit 1
+        ;;
+esac
+# ─────────────────────────────────────────────────────────────────────
+
 IMAGE="${HERMES_SANDBOX_IMAGE:-hermes-sandbox}"
 NETWORK="${NETWORK:-none}"
 MEM_LIMIT="${MEM_LIMIT:-4g}"

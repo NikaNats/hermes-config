@@ -8,7 +8,9 @@ IFS=$'\n\t'
 trap 'echo "Command failed at line $LINENO" >&2' ERR
 
 REPO="$HOME/src/hermes-config"
-HERMES_HOME="${HERMES_HOME:-$HOME/.config/hermes}"
+# Hermes' canonical default home is ~/.hermes (hermes_constants.py
+# _get_platform_default_hermes_home); HERMES_HOME overrides it when set.
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 CFG="$HERMES_HOME/config.yaml"
 PASS=0; FAIL=0; INFO=0
 
@@ -68,24 +70,42 @@ note "deterministic settings: temperature is model/provider-level (documented ga
   && ok "approvals.mode=smart (explicit tool permissions)" || bad "approvals.mode=smart"
 
 DCNT=$(CFG_PATH="$CFG" python3 -c "
-import os
+import os, sys
+
+path = os.environ.get('CFG_PATH', '')
+if not path or not os.path.isfile(path):
+    print(0)
+    sys.exit(0)
+
 try:
     import yaml
-    cfg = yaml.safe_load(open(os.environ['CFG_PATH']))
+    with open(path) as fh:
+        cfg = yaml.safe_load(fh)
+    if not isinstance(cfg, dict):
+        print(0)
+        sys.exit(0)
     deny = (cfg.get('approvals') or {}).get('deny') or []
     print(len(deny) if isinstance(deny, list) else 0)
 except ImportError:
-    # Fallback: lightweight regex (original behavior), tolerant of indentation.
+    # Fallback: lightweight regex (no PyYAML available), tolerant of indentation.
     import re
-    t = open(os.environ['CFG_PATH']).read()
+    try:
+        t = open(path).read()
+    except Exception:
+        print(0)
+        sys.exit(0)
     m = re.search(r'deny:\s*\[([^\]]+)\]', t)
     if m:
         print(len([x for x in m.group(1).split(',') if x.strip()]))
     else:
         m = re.search(r'deny:\n((?:[ \t]+- .*\n?)+)', t)
-        print(len(m.group(1).strip().splitlines()) if m else 0)" 2>/dev/null || echo 0)
-[ "$DCNT" -ge 27 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
-  || bad "destructive commands blocked (deny list: $DCNT patterns)"
+        print(len(m.group(1).strip().splitlines()) if m else 0)
+except Exception:
+    # Catch-all: yaml.YAMLError, PermissionError, etc. -> no false PASS
+    print(0)
+" 2>/dev/null || echo 0)
+[ "$DCNT" -ge 47 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
+  || bad "destructive commands blocked (deny list: $DCNT patterns, expected >= 47)"
 
 note "filesystem ACLs: not natively supported (OS perms + .agentignore instead)"
 [ -f "$HOME/.agentignore" ] && [ -f "$REPO/.gitignore" ] \
@@ -118,6 +138,19 @@ grep -qE '^[[:space:]]*engine:[[:space:]]*lcm[[:space:]]*$' "$CFG" && ok "contex
   || note "context.engine=lcm not set (hermes-lcm not active)"
 [ -f "$HERMES_HOME/lcm.db" ] && ok "lcm.db present" \
   || note "lcm.db not present (hermes-lcm not active)"
+
+# ── LCM redaction gate ──────────────────────────────────────────────
+if grep -qE '^[[:space:]]*engine:[[:space:]]*lcm[[:space:]]*$' "$CFG" 2>/dev/null; then
+    # LCM is active — redaction MUST be enabled
+    if grep -q 'LCM_SENSITIVE_PATTERNS_ENABLED=true' "$HERMES_HOME/.env" 2>/dev/null; then
+        ok "LCM secret redaction enabled (LCM_SENSITIVE_PATTERNS_ENABLED=true)"
+    else
+        bad "LCM active but LCM_SENSITIVE_PATTERNS_ENABLED not set to true in $HERMES_HOME/.env"
+    fi
+else
+    note "LCM not active — redaction check skipped"
+fi
+# ─────────────────────────────────────────────────────────────────────
 
 # ------------------------------------------------- Coding workflow
 sec "Coding Workflow"

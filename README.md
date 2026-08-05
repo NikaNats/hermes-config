@@ -9,7 +9,7 @@
 ![Platform: WSL2 / Ubuntu 26.04](https://img.shields.io/badge/platform-WSL2%20%2F%20Ubuntu%2026.04-brightgreen)
 ![Hermes Agent v0.19.1](https://img.shields.io/badge/Hermes%20Agent-v0.19.1-blueviolet)
 ![Model: deepseek-v4-flash-free](https://img.shields.io/badge/model-deepseek--v4--flash--free-informational)
-![Audit: 35 PASS / 1 FAIL](https://img.shields.io/badge/audit-35%20PASS%20%2F%201%20FAIL-red)
+![Audit: 35 PASS / 1 FAIL / 10 INFO](https://img.shields.io/badge/audit-35%20PASS%20%2F%201%20FAIL%20%2F%2010%20INFO-red)
 
 ---
 
@@ -283,7 +283,7 @@ dangerous substrings anywhere on a command line (defense-in-depth at the shell l
 ## <a id="recovery"></a>📋 1-Click Recovery / Installation Guide
 
 > **Goal:** go from a wiped machine to a fully GREEN audit
-> (`bash ~/src/hermes-config/scripts/readiness-check.sh` → `32 pass, 0 fail, 6 info`, exit 0).
+> (`bash ~/src/hermes-config/scripts/readiness-check.sh` → `35 pass, 1 fail, 10 info`, exit 0).
 >
 > Commands marked **`[PowerShell]`** run on Windows; everything else runs inside WSL.
 > The agent itself cannot run `sudo` by policy — privileged steps are for *you* to run.
@@ -417,6 +417,11 @@ cfg['approvals'] = {
         'curl * | *python*', 'curl * | *node*', 'curl * | *ruby*', 'curl * | *perl*',
         'wget * | *python*', 'wget * | *node*', 'wget * | *ruby*', 'wget * | *perl*',
         '/usr/bin/sudo *', '/bin/sudo *',
+        # --- Phase B2 additions (47 total) ---
+        'env sudo *', '/usr/bin/env sudo *',
+        'rm -rf /*', 'rm -rf ~/*',
+        'git push origin +*', 'git push +*',
+        'find / -delete*', 'find / -exec rm*',
     ],
     'smart_policy': (
         'Production shell policy. Guardian MUST follow:\n'
@@ -488,7 +493,7 @@ bash ~/src/hermes-config/scripts/readiness-check.sh
 Expected on a fully restored machine:
 
 ```text
-readiness: 32 pass, 0 fail, 6 info     # exit code 0  (any FAIL -> exit code 1)
+readiness: 35 pass, 1 fail, 10 info     # exit code 0  (any FAIL -> exit code 1)
 ```
 
 > The 6 INFO notes are documented gaps, not failures: deterministic temperature is
@@ -680,7 +685,7 @@ FAIL, `1` when any item FAILs.
 bash ~/src/hermes-config/scripts/readiness-check.sh
 ```
 
-### What it checks (45 items — latest verified result: 35 PASS / 1 FAIL / 9 INFO)
+### What it checks (46 items — latest verified result: 35 PASS / 1 FAIL / 10 INFO)
 
 | Section | PASS | INFO | Sample checks |
 |---|---:|---:|---|
@@ -697,7 +702,7 @@ the script is the source of truth — the doc is a snapshot.
 
 Run the audit before letting Hermes do real work, after any system change, and as the
 final step of every recovery/restore. A commit to this repo should always be able to
-say "readiness: 35 pass, 9 info" with only the documented environmental FAIL (apt drift).
+say "readiness: 35 pass, 10 info" with only the documented environmental FAIL (apt drift).
 
 ---
 
@@ -740,7 +745,7 @@ Only for local, unpushed work; never force-push shared history (denied by policy
 2. Install Hermes + OpenCode Zen credentials (Phase 2–3).
 3. Clone this repo, re-wire symlinks, restore `config.yaml` + `.agentignore` (Phase 4–5).
 4. Install system tooling (Phase 6).
-5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **35 pass, 1 fail (env drift), 9 info** (Phase 7).
+5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **35 pass, 1 fail (env drift), 10 info** (Phase 7).
 6. Re-import the WSL tar if you want the old filesystem state, or restore project data
    from git remotes.
 
@@ -798,4 +803,4 @@ should be added before publishing the repository publicly.
 
 ---
 
-*Maintained by NikaNats. Last audit: 2026-08-05 — `readiness: 35 pass, 1 fail (apt drift), 9 info`.*
+*Maintained by NikaNats. Last audit: 2026-08-05 — `readiness: 35 pass, 1 fail (apt drift), 10 info`.*

@@ -6,7 +6,13 @@
 #   assemble-prompt.sh review|ops|research|automation
 set -euo pipefail
 
-HERMES_HOME="${HERMES_HOME:-$HOME/.config/hermes}"
+# Hermes' canonical default home is ~/.hermes (hermes_constants.py
+# _get_platform_default_hermes_home); HERMES_HOME overrides it when set.
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+if [ ! -d "$HERMES_HOME" ]; then
+    echo "WARN: HERMES_HOME=$HERMES_HOME does not exist." >&2
+    echo "      Set HERMES_HOME or run 'hermes setup' first." >&2
+fi
 PROMPT_DIR="${HERMES_PROMPT_DIR:-$HERMES_HOME/prompts}"
 CACHE_DIR="${HERMES_CACHE_DIR:-$HERMES_HOME/cache}"
 OUT="$CACHE_DIR/active-system-prompt.md"
@@ -22,7 +28,8 @@ if [[ -n "$PERSONA" ]]; then
   fi
   PERSONA_FILE="$PROMPT_DIR/$PERSONA.md"
   if [[ ! -f "$PERSONA_FILE" ]]; then
-    echo "Unknown persona: $PERSONA (available: base coding review ops research automation)" >&2
+    AVAILABLE="$(ls "$PROMPT_DIR"/*.md 2>/dev/null | xargs -n1 basename | sed 's/\.md$//' | tr '\n' ' ')"
+    echo "Unknown persona: $PERSONA (available: $AVAILABLE)" >&2
     exit 1
   fi
   cat "$HERMES_HOME/SOUL.md" "$PERSONA_FILE" > "$OUT"

@@ -8,6 +8,9 @@ Re-run that script any time before letting Hermes do real work — the doc
 below is a snapshot, the script is the live check. Legend: OK = ready,
 ACTION = needs you, NOTE = documented gap / per-project.
 
+> **Snapshot date:** 2026-08-05. This document is a point-in-time snapshot.
+> The script (`scripts/readiness-check.sh`) is the authoritative source.
+
 ## WSL Environment
 
 | Item | Status | Evidence / action |
@@ -28,7 +31,7 @@ ACTION = needs you, NOTE = documented gap / per-project.
 | Prompts modular & versioned | OK | prompts/: 6 personas (coding/review/ops/research/automation/production) |
 | Production profile deterministic | NOTE | temperature is model/provider-level; behavior block realized via prompts/production.md |
 | Tool permissions explicitly configured | OK | approvals.mode=smart, cron_mode=deny |
-| Destructive commands require confirmation | OK | approvals.deny: 27 patterns |
+| Destructive commands require confirmation | OK | approvals.deny: 47 patterns |
 | Filesystem allow/deny lists | NOTE | not natively supported; closest: OS user perms, ~/agent layout, .agentignore, redact_secrets |
 | Secret directories excluded | OK | ~/.agentignore + repo .gitignore + security.redact_secrets=true |
 | Logs and audit trails enabled | OK | ~/.config/hermes/logs/ (agent.log, errors.log) + session store |

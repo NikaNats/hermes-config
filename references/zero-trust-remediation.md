@@ -61,7 +61,12 @@ Follow-up required: Test 4 (sudoers apply — user action, see §7).
 ## 4. Audit & operational reliability (Phase 4)
 
 - `scripts/readiness-check.sh`:
-  - `HERMES_HOME` default `~/.hermes` → `~/.config/hermes` (matches active home).
+  - `HERMES_HOME` default: round 1 moved `~/.hermes` → `~/.config/hermes`
+    (machine-specific); **round 2 (2026-08-05 runbook, C5) reverted to
+    `~/.hermes`** — the canonical platform default per `hermes_constants.py`
+    `_get_platform_default_hermes_home()`. `HERMES_HOME` env override wins on
+    this machine (`~/.config/hermes` in `.bashrc`), so runtime is unchanged.
+  - Added startup WARN when the resolved `HERMES_HOME` does not exist.
   - Deny-list count: `len(deny)` → `len(deny) if isinstance(deny, list) else 0`
     (a scalar-coerced list previously counted characters → false PASS; now 0 → FAIL).
   - Regex fallback now also handles flow-style `deny: [...]` (old block-only regex
@@ -75,7 +80,9 @@ Follow-up required: Test 4 (sudoers apply — user action, see §7).
 - `~/.config/hermes/config.yaml` `approvals.deny`: 27 → **39 patterns**.
   Added: no-space pipe evasions (`curl *|*sh`, `wget *|*sh`), non-shell interpreter
   piping (`curl`/`wget` → `python`/`node`/`ruby`/`perl`), absolute-path sudo
-  (`/usr/bin/sudo *`, `/bin/sudo *`).
+  (`/usr/bin/sudo *`, `/bin/sudo *`). **Round 2 (B2): 39 → 47 patterns** —
+  `env sudo *`, `/usr/bin/env sudo *`, `rm -rf /*`, `rm -rf ~/*`,
+  `git push origin +*`, `git push +*`, `find / -delete*`, `find / -exec rm*`.
 - Written as real YAML list (never `hermes config set`). Backup:
   `/tmp/hermes-config.yaml.pre-remediation.bak`. Recovery script in README §Phase 5
   updated to restore the full 39-pattern list.

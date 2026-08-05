@@ -16,3 +16,18 @@ id_ed25519
 
 # CodeGraph index (references/codegraph-guide.md)
 .codegraph/
+
+# Runtime / machine-local
+*.log
+lcm.db
+lcm.db-wal
+lcm.db-shm
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

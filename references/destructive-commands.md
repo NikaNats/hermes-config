@@ -4,12 +4,17 @@ Blocked or explicit-confirmation commands. Enforcement split:
 
 ## Enforced by approvals.deny (agent cannot run at all)
 
-    rm -rf /            rm -rf ~            sudo *
+    rm -rf /            rm -rf ~            rm -rf /*           rm -rf ~/*
+    sudo *              env sudo *          /usr/bin/env sudo *
+    /usr/bin/sudo *     /bin/sudo *
     chmod -R 777 *      chown -R *
-    curl * | *sh        wget * | *sh
-    git push --force*   git reset --hard*  git clean -fd*
-    git checkout -- .   git branch -D*     git rebase -i*
-    dd if=*             mkfs*              fdisk /dev*   parted /dev*
+    curl * | *sh        wget * | *sh        curl *|*sh          wget *|*sh
+    curl * | *python*   curl * | *node*     curl * | *ruby*     curl * | *perl*
+    wget * | *python*   wget * | *node*     wget * | *ruby*     wget * | *perl*
+    git push --force*   git push origin +*  git push +*
+    git reset --hard*   git clean -fd*
+    git checkout -- .   git branch -D*      git rebase -i*
+    dd if=*             mkfs*               fdisk /dev*         parted /dev*
     systemctl stop*     systemctl disable*
     iptables -F*
     docker system prune*
@@ -17,6 +22,7 @@ Blocked or explicit-confirmation commands. Enforcement split:
     terraform destroy*  pulumi destroy*
     ansible-playbook --check=false*
     shutdown*           reboot*
+    find / -delete*     find / -exec rm*
 
 Notes:
 - `git push --force-with-lease` is covered by the `git push --force*` pattern.

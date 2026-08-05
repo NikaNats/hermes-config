@@ -41,6 +41,15 @@ curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install
 
 - Installs to `~/.local/bin`; works without Node (bundled runtime).
 
+> ⚠️ **Telemetry is ON by default.** CodeGraph collects anonymous usage stats
+> unless explicitly disabled. Immediately after install, run:
+> ```bash
+> codegraph telemetry off
+> # or set in environment:
+> export CODEGRAPH_TELEMETRY=0
+> ```
+> Verified off on this machine. Add to `~/.bashrc` for persistence.
+
 ---
 
 ## Phase 2 — Register the MCP server in Hermes

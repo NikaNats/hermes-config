@@ -198,6 +198,16 @@ Behavior (verified in README + operator guide):
   categories include a short truncated SHA-256 digest for correlation.
 - **Forward-only:** enabling it does NOT rewrite existing rows, FTS shadow
   tables, summaries, or externalized payloads written before the setting.
+
+> ⚠️ **Forward-only:** enabling `LCM_SENSITIVE_PATTERNS_ENABLED=true` does
+> NOT rewrite existing rows, FTS shadow tables, summaries, or externalized
+> payloads written before the setting. To purge historical secrets:
+> 1. `/lcm backup` (or offline copy of `lcm.db` + `-wal`/`-shm`)
+> 2. Delete `lcm.db` and restart Hermes (fresh database)
+> 3. Re-ingest any needed history manually
+>
+> **Audit requirement:** `readiness-check.sh` now FAILs if LCM is active
+> without `LCM_SENSITIVE_PATTERNS_ENABLED=true`.
 - Catalog entries: `api_key` (api_key/api_token/access_token/secret_key/
   client_secret assignments or JSON keys), `bearer_token` (`Bearer ...` and
   token-like JSON keys), `password_assignment` (password/passwd/pwd/passphrase

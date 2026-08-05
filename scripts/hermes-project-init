@@ -44,6 +44,43 @@ coverage/
 *.key
 EOF
 
-git add .agentignore 2>/dev/null || true
-git commit -m "Add agent ignore file" 2>/dev/null || echo "note: nothing to commit or git identity not configured"
+# Git-level ignore (mirrors .agentignore secret patterns).
+# Git reads .gitignore, NOT .agentignore — without this, `git add .`
+# stages secrets in every new project.
+cat > .gitignore <<'GITEOF'
+# Dependencies / build artifacts
+node_modules/
+.venv/
+venv/
+dist/
+build/
+target/
+.next/
+coverage/
+
+# Secrets (mirrors .agentignore — spec 5.6)
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.key
+id_rsa
+id_ed25519
+.aws/
+.azure/
+.config/gcloud/
+.ssh/
+.gnupg/
+
+# Logs
+*.log
+
+# Agent index (CodeGraph)
+.codegraph/
+GITEOF
+
+git add .agentignore .gitignore 2>/dev/null || true
+git commit -m "chore(safety): add .agentignore and .gitignore" 2>/dev/null \
+    || echo "note: nothing to commit or git identity not configured"
 echo "Project initialized at $ROOT"
