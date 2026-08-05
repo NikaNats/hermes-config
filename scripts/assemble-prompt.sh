@@ -28,7 +28,7 @@ if [[ -n "$PERSONA" ]]; then
   fi
   PERSONA_FILE="$PROMPT_DIR/$PERSONA.md"
   if [[ ! -f "$PERSONA_FILE" ]]; then
-    AVAILABLE="$(ls "$PROMPT_DIR"/*.md 2>/dev/null | xargs -n1 basename | sed 's/\.md$//' | tr '\n' ' ')"
+    AVAILABLE="$(find "$PROMPT_DIR" -maxdepth 1 -name '*.md' -printf '%f\n' 2>/dev/null | sed 's/\.md$//' | tr '\n' ' ')"
     echo "Unknown persona: $PERSONA (available: $AVAILABLE)" >&2
     exit 1
   fi

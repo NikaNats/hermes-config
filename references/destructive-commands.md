@@ -23,10 +23,36 @@ Blocked or explicit-confirmation commands. Enforcement split:
     ansible-playbook --check=false*
     shutdown*           reboot*
     find / -delete*     find / -exec rm*
+    # --- R-02 additions (71 total): wrapper/path/flag variants ---
+    bash -c *           sh -c *             dash -c *           zsh -c *
+    /bin/bash -c *      /bin/sh -c *
+    python -c *         python3 -c *        perl -e *           ruby -e *       node -e *
+    /bin/rm -rf *       /usr/bin/rm -rf *
+    rm -r -f *          rm -f -r *
+    (sudo *             (rm -rf *
+    /usr/bin/find / -delete*    /bin/find / -delete*
+    find / -exec sudo * find /home -delete*
+    env rm -rf *
+    eval *              exec sudo *
 
 Notes:
 - `git push --force-with-lease` is covered by the `git push --force*` pattern.
 - `rmdir /s` (Windows cmd) is irrelevant to WSL bash and is not matched.
+- Wrapper/interpreter execution (`bash -c`, `python3 -c`, `perl -e`, `eval`, …) is
+  deny-listed (R-02) — benign inline `python3 -c` must now run from a script file.
+
+## Shell-layer scanner (defense-in-depth, R-02)
+
+`scripts/hardline-check.sh` blocks what prefix globs cannot see: pipe-to-shell
+(`curl | sh`, `echo x | base64 -d | sh`), command substitution of remote fetches
+(`$(curl ...)`, `` `wget ...` ``), decode-to-pipeline (`base64 -d | ...`),
+eval/exec of fetched content, and recursive-delete of root/home via variables or
+reordered flags. Run:
+
+    scripts/hardline-check.sh '<candidate command line>'   # exit 1 = BLOCK
+
+`approvals.smart_policy` rule 9 instructs the Guardian to invoke it pre-execution
+on any command not already deny-listed.
 
 ## Policy-only (documented, require human review — not shell-prefix matchable)
 

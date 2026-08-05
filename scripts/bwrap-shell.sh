@@ -47,6 +47,19 @@ fi
 WORKSPACE_ARGS=()
 [ -d /workspace ] && WORKSPACE_ARGS+=(--tmpfs /workspace)
 
+# 5. User-namespace preflight (R-05): refuse to run if user namespaces are
+#    unavailable — silently degrading would weaken the isolation contract.
+if ! bwrap --unshare-user --die-with-parent --ro-bind / / --proc /proc --dev /dev \
+        --unshare-pid --unshare-uts --unshare-ipc --new-session --chdir / true 2>/dev/null; then
+    echo "FATAL: bwrap --unshare-user unavailable (kernel.unprivileged_userns_clone=0?)." >&2
+    exit 1
+fi
+
+# NOTE (r3): a --bind /dev/null /proc/sysrq-trigger mask does NOT take effect
+# in this bwrap version (the --proc mount wins regardless of option order —
+# verified empirically). The real protection is the user namespace: writes
+# to /proc/sysrq-trigger require CAP_SYS_ADMIN in the INITIAL userns, so the
+# file is visible but unwritable (echo 1 > ... -> Permission denied, EPERM).
 exec bwrap \
     --ro-bind / / \
     --bind "$PWD" "$PWD" \
@@ -56,11 +69,15 @@ exec bwrap \
     "${TMPFS_ARGS[@]}" \
     --proc /proc \
     --dev /dev \
+    --tmpfs /proc/sys \
+    --tmpfs /sys/firmware \
+    --unshare-user \
     --unshare-pid \
     --unshare-uts \
     --unshare-ipc \
+    --unshare-cgroup-try \
     --new-session \
     "${NET_ARGS[@]}" \
     --die-with-parent \
     --chdir "$PWD" \
-    bash
+    bash "$@"

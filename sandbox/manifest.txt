@@ -1,0 +1,21 @@
+# hermes-sandbox — resolved toolchain manifest (R-06)
+# Generated 2026-08-06 after build abcb7e01ecda (ubuntu:26.04 base).
+# Dockerfile pins are major.minor wildcards (documented recovery trade-off —
+# exact pins caused apt 404s during round-1 disaster recovery). This file
+# records what the wildcards actually resolved to, so drift is auditable.
+#
+#   git        2.53.0
+#   python3    3.14.4
+#   python3-venv  3.14.4 (matches python3)
+#   node       v22.22.1
+#   npm        9.2.0
+#   jq         1.8.1
+#   ripgrep    15.1.0
+#   gcc        15.2.0 (Ubuntu 15.2.0-16ubuntu1)
+#
+# Sandbox user: 'sandbox' created with --build-arg SANDBOX_UID/SANDBOX_GID
+# matched to the host (this machine: 1000:1000). Base image ships 'ubuntu'
+# at uid/gid 1000, which the build removes first.
+#
+# Rebuild: docker build -t hermes-sandbox \
+#   --build-arg SANDBOX_UID="$(id -u)" --build-arg SANDBOX_GID="$(id -g)" sandbox/

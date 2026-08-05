@@ -8,18 +8,19 @@ Re-run that script any time before letting Hermes do real work — the doc
 below is a snapshot, the script is the live check. Legend: OK = ready,
 ACTION = needs you, NOTE = documented gap / per-project.
 
-> **Snapshot date:** 2026-08-05. This document is a point-in-time snapshot.
+> **Snapshot date:** 2026-08-06. This document is a point-in-time snapshot.
 > The script (`scripts/readiness-check.sh`) is the authoritative source.
+> Current live result: **43 pass, 0 fail, 11 info** (script exits 0 iff FAIL=0).
 
 ## WSL Environment
 
 | Item | Status | Evidence / action |
 |---|---|---|
 | WSL2 active | OK | kernel 6.18.33.2-microsoft-standard-WSL2 |
-| Distro updated | ACTION | 18 pending upgrades: sudo apt update && sudo apt upgrade |
+| Distro drift | NOTE | 10 pending upgrades (environmental, INFO per R-01: sudo apt upgrade) |
 | systemd enabled | OK | PID 1 = systemd |
 | Default user non-root | OK | nika (uid 1000) |
-| .wslconfig memory/CPU limits | ACTION | not found under /mnt/c/Users/*/; create .wslconfig: [wsl2] memory=..GB, processors=N, then wsl --shutdown |
+| .wslconfig memory/CPU limits | OK | /mnt/c/Users/Nika/.wslconfig (memory=12GB, processors=8) |
 | Windows PATH injection disabled | OK | /etc/wsl.conf appendWindowsPath=false |
 | Source code on Linux fs | OK | ~/src on ext4 (not /mnt) |
 
@@ -30,10 +31,10 @@ ACTION = needs you, NOTE = documented gap / per-project.
 | Config in version control | OK | repo ~/src/hermes-config tracks SOUL.md, prompts/, references/, scripts/; live config.yaml machine-local by design |
 | Prompts modular & versioned | OK | prompts/: 6 personas (coding/review/ops/research/automation/production) |
 | Production profile deterministic | NOTE | temperature is model/provider-level; behavior block realized via prompts/production.md |
-| Tool permissions explicitly configured | OK | approvals.mode=smart, cron_mode=deny |
-| Destructive commands require confirmation | OK | approvals.deny: 47 patterns |
+| Tool permissions explicitly configured | OK | approvals.mode=smart, cron_mode=deny, tirith_enabled=true |
+| Destructive commands require confirmation | OK | approvals.deny: 71 patterns (>= 71 required) |
 | Filesystem allow/deny lists | NOTE | not natively supported; closest: OS user perms, ~/agent layout, .agentignore, redact_secrets |
-| Secret directories excluded | OK | ~/.agentignore + repo .gitignore + security.redact_secrets=true |
+| Secret directories excluded | OK | ~/.agentignore content-checked (R-10) + repo .gitignore + security.redact_secrets=true |
 | Logs and audit trails enabled | OK | ~/.config/hermes/logs/ (agent.log, errors.log) + session store |
 
 ## Coding Workflow
@@ -53,14 +54,16 @@ ACTION = needs you, NOTE = documented gap / per-project.
 
 | Item | Status | Evidence / action |
 |---|---|---|
-| No unrestricted sudo | OK | passwordless sudo NOT available; deny 'sudo *' |
-| No broad rm -rf | OK | deny 'rm -rf /', 'rm -rf ~'; trash.sh for deletes |
+| No unrestricted sudo | OK | passwordless sudo NOT available; deny 'sudo *' (structural YAML check, R-08) |
+| No broad rm -rf | OK | deny 'rm -rf /', 'rm -rf ~'; trash.sh for deletes (canonicalized, R-03) |
 | No force-push by default | OK | deny 'git push --force*' |
-| No secret access | OK | SOUL.md rule 7 + redact_secrets + .agentignore |
-| External content untrusted | OK | SOUL.md rule 8 (expanded, spec 5.10) |
-| Prompt-injection defenses present | OK | SOUL.md rule 8 + references/prompt-injection-defense.md |
-| Container/sandbox available | OK | docker + sandbox/Dockerfile + run-sandbox.sh + bwrap-shell.sh |
-| WSL export backup exists | ACTION | none found; PowerShell: wsl --export Ubuntu ubuntu-backup-2026-08-03.tar |
+| No secret access | OK | SOUL.md marker audit:no-secrets + redact_secrets + .agentignore |
+| External content untrusted | OK | SOUL.md marker audit:untrusted-input (spec 5.10) |
+| Prompt-injection defenses present | OK | SOUL.md rule 8 + references/prompt-injection-defense.md + hardline-check.sh |
+| SOUL.md + prompts/ symlinks live | OK | $HERMES_HOME symlink -> repo verified (R-07) |
+| .env permissions | OK | 600 (owner-only, R-17) |
+| Container/sandbox available | OK | docker daemon running + Dockerfile + run-sandbox.sh + bwrap-shell.sh + userns probe (R-09) |
+| WSL export backup exists | OK | /mnt/c/Users/Nika/ubuntu-backup-2026-08-03.tar |
 
 ## Non-Coding Use
 
@@ -72,10 +75,7 @@ ACTION = needs you, NOTE = documented gap / per-project.
 | Research mode: citation + uncertainty | OK | references/research-workflow.md |
 | System admin mode: read-only diagnostics | OK | references/sysadmin-readonly.md + narrow sudoers example |
 
-## To reach fully green
+## To reach fully green (current: 43 pass, 0 fail, 11 info — script exits 0)
 
-1. sudo apt update && sudo apt upgrade   (18 pending)
-2. Create .wslconfig with [wsl2] memory/processors, then wsl --shutdown
-3. wsl --export Ubuntu ubuntu-backup-2026-08-03.tar   (PowerShell)
-4. sudo apt install -y pandoc poppler-utils python3-docx python3-openpyxl csvkit duckdb lnav
-5. Optional: GPG key for commit signing; trash-cli; gitleaks/trufflehog
+1. Optional: sudo apt update && sudo apt upgrade (10 pending — INFO, not FAIL)
+2. Optional: GPG key for commit signing; trash-cli; pandoc/poppler/duckdb/lnav (2 INFO notes)

@@ -8,20 +8,16 @@ IFS=$'\n\t'
 # Hermes' canonical default home is ~/.hermes (hermes_constants.py
 # _get_platform_default_hermes_home); HERMES_HOME overrides it when set.
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-# mktemp: unpredictable path defeats the /tmp symlink attack on the fixed name
-LOGROTATE_FILE="$(mktemp /tmp/hermes-logrotate.XXXXXX)"
-cat > "$LOGROTATE_FILE" <<EOF
-$HERMES_HOME/logs/*.log {
-    weekly
-    rotate 8
-    compress
-    delaycompress
-    missingok
-    notifempty
-}
-EOF
+# R-14: temp file out of /tmp (no sticky-dir exposure) under $HOME, and the
+# path is QUOTED inside the logrotate stanza so spaces/specials cannot break
+# or inject into the config. No EXIT trap: the file must survive for the human
+# to install (the apply command below references it).
+LOGROTATE_FILE="$(mktemp "${HOME}/hermes-logrotate.XXXXXX")"
+printf '%s/logs/*.log {\n  weekly\n  rotate 8\n  compress\n  delaycompress\n  missingok\n  notifempty\n}\n' \
+  "\"$HERMES_HOME\"" > "$LOGROTATE_FILE"
 
 echo "Generated $LOGROTATE_FILE"
+echo "Checksum: $(sha256sum "$LOGROTATE_FILE")"
 echo
 echo "To apply, run (you, not the agent):"
 echo "  sudo install -m 0644 $LOGROTATE_FILE /etc/logrotate.d/hermes"

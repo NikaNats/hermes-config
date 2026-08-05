@@ -30,7 +30,7 @@ _persona_env() {
     local file="$HERMES_PROMPTS_DIR/$1.md"
     if [ ! -f "$file" ]; then
         echo "FATAL: Persona file missing: $file" >&2
-        echo "       Available: $(ls "$HERMES_PROMPTS_DIR"/*.md 2>/dev/null | xargs -n1 basename | sed 's/\.md$//' | tr '\n' ' ')" >&2
+        echo "       Available: $(find "$HERMES_PROMPTS_DIR" -maxdepth 1 -name '*.md' -printf '%f\n' 2>/dev/null | sed 's/\.md$//' | tr '\n' ' ')" >&2
         return 1
     fi
     cat "$file"
@@ -46,6 +46,7 @@ hermes-production() { _validate_persona "production" || return 1; local p; p="$(
 
 # One-shot variant: hermes-one coding "build the auth module"
 hermes-one() {
+  local IFS=' '  # R-22: neutralize the script-level IFS=$'\n\t' so $* joins with spaces
   local persona="${1:?usage: hermes-one <persona|base> <query>}"
   shift
   if [ "$persona" = "base" ]; then

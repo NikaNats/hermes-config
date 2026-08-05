@@ -57,6 +57,16 @@ if [ "${SANDBOX_RW:-0}" = "1" ]; then
     MOUNT_OPTS="rw"
 fi
 
+# R-04: kernel-resource containment. --memory-swap = --memory disables swap
+# spill onto the host; --pids-limit ceilings fork bombs; ulimits bound FDs and
+# processes. Seccomp: Docker's default profile applies unless
+# --security-opt seccomp=unconfined; set SECCOMP_PROFILE=/path/seccomp.json to
+# drop in a tighter profile (must be a full replacement profile).
+SECCOMP_ARGS=()
+if [ -n "${SECCOMP_PROFILE:-}" ]; then
+    SECCOMP_ARGS=(--security-opt "seccomp=$SECCOMP_PROFILE")
+fi
+
 exec docker run --rm -it \
     --init \
     --user "$(id -u):$(id -g)" \
@@ -66,9 +76,14 @@ exec docker run --rm -it \
     --tmpfs /tmp:rw,noexec,nosuid,size=512m \
     --tmpfs /scratch:rw,noexec,nosuid,size=1g \
     --memory "$MEM_LIMIT" \
+    --memory-swap "$MEM_LIMIT" \
+    --pids-limit 256 \
+    --ulimit nofile=1024:2048 \
+    --ulimit nproc=256:256 \
     --cpus "$CPU_LIMIT" \
+    "${SECCOMP_ARGS[@]}" \
     --network "$NETWORK" \
-    -v "$PWD:/work:${MOUNT_OPTS}" \
+    -v "$PWD:/work:${MOUNT_OPTS},rprivate" \
     -w /work \
     "$IMAGE" \
-    bash
+    bash "$@"

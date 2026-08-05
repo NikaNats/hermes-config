@@ -77,15 +77,18 @@ Follow-up required: Test 4 (sudoers apply — user action, see §7).
 
 ## 5. Live config deny list (Phase 5)
 
-- `~/.config/hermes/config.yaml` `approvals.deny`: 27 → **39 patterns**.
-  Added: no-space pipe evasions (`curl *|*sh`, `wget *|*sh`), non-shell interpreter
-  piping (`curl`/`wget` → `python`/`node`/`ruby`/`perl`), absolute-path sudo
-  (`/usr/bin/sudo *`, `/bin/sudo *`). **Round 2 (B2): 39 → 47 patterns** —
-  `env sudo *`, `/usr/bin/env sudo *`, `rm -rf /*`, `rm -rf ~/*`,
-  `git push origin +*`, `git push +*`, `find / -delete*`, `find / -exec rm*`.
-- Written as real YAML list (never `hermes config set`). Backup:
-  `/tmp/hermes-config.yaml.pre-remediation.bak`. Recovery script in README §Phase 5
-  updated to restore the full 39-pattern list.
+- `~/.config/hermes/config.yaml` `approvals.deny`: 27 → **39 patterns** (round 1),
+  39 → **47 patterns** (round 2, B2), **47 → 71 patterns (round 3, R-02)**.
+  Round-3 additions: shell/interpreter wrappers (`bash -c *`, `python3 -c *`,
+  `perl -e *`, …), absolute-path binaries (`/bin/rm -rf *`, `/usr/bin/find / -delete*`),
+  flag reorders (`rm -r -f *`, `rm -f -r *`), subshell prefixes (`(sudo *`, `(rm -rf *`),
+  `find / -exec sudo *`, `find /home -delete*`, `env rm -rf *`, `eval *`, `exec sudo *`).
+- Written as real YAML list (never `hermes config set`). Backups:
+  `/tmp/hermes-config.yaml.pre-remediation.bak` (r1),
+  `/tmp/hermes-config.yaml.pre-b2.bak` (r2), `/tmp/hermes-config.yaml.pre-r02.bak` (r3).
+  Recovery script in README §Phase 5 updated to restore the full 71-pattern list.
+- `approvals.smart_policy` gained rule 9 (r3): invoke `scripts/hardline-check.sh`
+  pre-execution on any command not already deny-listed.
 - `prompts/base.md` symlink: claim of dangling symlink was **stale** — it already
   resolved to `../SOUL.md`; the new audit check guards it going forward.
 
@@ -109,7 +112,51 @@ Follow-up required: Test 4 (sudoers apply — user action, see §7).
 | audit fallback regex: block style | PASS — 27 patterns |
 | audit fallback regex: flow style | PASS — 3 patterns |
 | Dockerfile wildcard pins (rebuild) | PASS — all toolchains resolve |
-| Full readiness audit | 35 pass, 1 fail (env apt drift), 9 info |
+| Full readiness audit | 35 pass, 1 fail (env apt drift), 9 info → **43 pass, 0 fail, 11 info (2026-08-06, r3)** |
+
+## 8. Round-3 remediation record (2026-08-06, R-01..R-23)
+
+- **R-01**: apt drift reclassified FAIL → INFO (environmental, not config); audit
+  exit-0-iff-FAIL=0 is now truthful; Phase 6b backup cross-ref added to README.
+- **R-02**: deny list 47 → 71 (wrapper/path/flag variants); new
+  `scripts/hardline-check.sh` shell-layer scanner (pipe-to-shell, base64-to-shell,
+  remote-fetch substitution, eval/exec, root-rm via variables); smart_policy rule 9.
+- **R-03**: `trash.sh` gates on the CANONICAL path (`realpath` of the parent) —
+  `/home/nika/../../etc/passwd` embedded-traversal and symlinked-dir vectors closed.
+- **R-04**: `run-sandbox.sh` adds `--memory-swap = --memory`, `--pids-limit 256`,
+  `--ulimit nofile/nproc`, `,rprivate` mount propagation, and a `SECCOMP_PROFILE`
+  drop-in hook (Docker's default seccomp profile remains the baseline).
+- **R-05**: `bwrap-shell.sh` adds `--unshare-user` (with preflight probe → FATAL),
+  `--unshare-cgroup-try`, `--tmpfs /proc/sys`, `--tmpfs /sys/firmware`, and
+  forwards `"$@"` (supports -c). The guide's `--bind /dev/null
+  /proc/sysrq-trigger` mask was empirically PROVEN ineffective in this bwrap
+  version (the `--proc` mount wins regardless of option order) and removed —
+  the real protection is the user namespace: sysrq writes need CAP_SYS_ADMIN
+  in the INITIAL userns, so the file is visible but unwritable
+  (`echo 1 > /proc/sysrq-trigger` → Permission denied, verified).
+  (Guide's `--unshare-cgroup-ns` and `--true` probe were also invalid bwrap
+  flags — used the real flags.)
+- **R-06**: Dockerfile gains a real `sandbox` user (ARG SANDBOX_UID/GID), `ENV HOME`,
+  `USER sandbox`; image rebuilt with host-matched uid; `sandbox/manifest.txt` records
+  resolved toolchain versions.
+- **R-07/R-08/R-09/R-10/R-15/R-16/R-17**: readiness now verifies live symlink wiring
+  (SOUL.md, prompts/), structural YAML deny check (replaces 3 fragile greps),
+  docker-daemon/bwrap/userns liveness, `.agentignore` CONTENT (not just existence),
+  `approvals.cron_mode=deny` + `security.tirith_enabled=true`, HERMES_HOME existence
+  gate + resolved-path print, `.env` 600/400 check.
+- **R-13**: `.pre-commit-config.yaml` expanded (gitleaks + shellcheck + yamllint +
+  check-yaml/check-symlinks/check-merge-conflict/eof/whitespace); revs verified.
+- **R-14**: `setup-logrotate.sh` temp moved out of /tmp to `$HOME`, stanza path
+  quoted, checksum printed (guide's EXIT-trap omitted — it would delete the file the
+  install command references).
+- **R-20/R-23**: SOUL.md carries stable `audit:` markers (validation-required,
+  no-secrets, untrusted-input) instead of prose greps, plus an 11th principle
+  bounding unbounded operations.
+- **R-21/R-22**: `new-report.sh` rejects degenerate names (`.`, `..`, dotfiles);
+  `hermes-one` neutralizes the script-level IFS with `local IFS=' '`.
+- Verified: readiness **43 pass, 0 fail, 11 info, exit 0**; trash traversal FATAL;
+  hardline scanner blocks all 8 bypass vectors; pre-commit hooks run clean;
+  sandbox limits live in `docker inspect`; bwrap `id -u` mapped, sysrq/firmware masked.
 
 ## 7. Follow-up (user action)
 

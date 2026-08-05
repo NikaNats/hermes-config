@@ -17,22 +17,28 @@ for src in "$@"; do
         exit 1
     fi
 
-    # Reject path-traversal and system paths. Absolute paths are allowed only
-    # under user-writable trees (home, temp, mounts); everything else is
-    # refused so a mistyped /etc/... target can't be moved out of place.
+    # Reject path-traversal and system paths. The allow-list decision rests on
+    # the CANONICAL path (R-03): realpath resolves embedded ../ traversal and
+    # symlinked dirs (e.g. /home/nika/linkdir/file where linkdir -> /etc), so
+    # /home/nika/../../etc/passwd cannot slip past a /home/* glob. The parent
+    # dir must exist; the final component may be a broken symlink (handled by
+    # -L above) and is appended unmodified so mv moves the link, not its target.
     case "$src" in
         ..|../*)
             echo "FATAL: Refusing to trash '$src' (parent-path traversal)." >&2
             exit 1
             ;;
-        /*)
-            case "$src" in
-                /home/*|/tmp/*|/mnt/*|/media/*) ;;
-                *)
-                    echo "FATAL: Refusing to trash '$src' (system path)." >&2
-                    exit 1
-                    ;;
-            esac
+    esac
+    parent="$(realpath -e -- "$(dirname -- "$src")" 2>/dev/null)" || {
+        echo "FATAL: cannot resolve parent of '$src'" >&2
+        exit 1
+    }
+    canon="$parent/$(basename -- "$src")"
+    case "$canon" in
+        /home/*|/tmp/*|/mnt/*|/media/*) ;;
+        *)
+            echo "FATAL: Refusing to trash '$src' (resolves to '$canon', outside allowed trees)." >&2
+            exit 1
             ;;
     esac
 
