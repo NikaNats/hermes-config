@@ -1,83 +1,82 @@
 #!/usr/bin/env bash
-# Bubblewrap restricted shell: Zero-Trust execution.
-# - Refuses to run from $HOME or / to prevent broad host exposure.
-# - Binds PWD read-write, but applies tmpfs masks OVER the bind (last mount wins).
-# - Defaults to strict network isolation (SANDBOX_NET=1 opts in; the legacy
-#   SANDBOX_NO_NET=1 flag is now the default behavior and accepted as a no-op).
+# Bubblewrap restricted shell (R4). Changes vs R-05:
+#  - Allowlist PWD guard (parity with run-sandbox.sh) — C-2
+#  - PWD bound READ-ONLY by default; SANDBOX_RW=1 opts in (Docker parity) — C-2
+#  - Optional size-capped tmpfs via BWRAP_TMPFS_SIZE (probed; warns+skips if
+#    this bwrap build rejects --size) — L-3
 set -Eeuo pipefail
 IFS=$'\n\t'
+die() { echo "FATAL: $*" >&2; exit 1; }
 
-# 1. Prevent broad host exposure
-case "$PWD" in
-    "$HOME"|"$HOME/"|"/")
-        echo "FATAL: Refusing to sandbox from '$PWD'. Invoke from a specific project directory." >&2
-        exit 1
-        ;;
-esac
+# ── Allowlist PWD guard (identical semantics to run-sandbox.sh) ────────
+PWD_REAL="$(realpath -e -- "$PWD" 2>/dev/null)" || die "cannot resolve PWD"
+PROTECTED=(
+  "$HOME/.ssh" "$HOME/.aws" "$HOME/.azure" "$HOME/.config/gcloud"
+  "$HOME/.gnupg" "$HOME/.kube" "$HOME/.docker" "$HOME/.config/hermes"
+  "$HOME/.netrc" "$HOME/.bash_history"
+  /etc /boot /usr /bin /sbin /var /root /mnt /media /opt /srv
+)
+for p in "${PROTECTED[@]}"; do
+  case "$PWD_REAL" in "$p"|"$p"/*) die "refusing to sandbox inside protected path: $PWD_REAL";; esac
+done
+ALLOW_ROOTS=("$HOME/src" "$HOME/agent/workspaces")
+[ -n "${SANDBOX_ALLOW_DIR:-}" ] && ALLOW_ROOTS+=("$(realpath -e -- "$SANDBOX_ALLOW_DIR" || die "SANDBOX_ALLOW_DIR invalid")")
+ok=""
+for r in "${ALLOW_ROOTS[@]}"; do case "$PWD_REAL" in "$r"|"$r"/*) ok=1;; esac; done
+[ -n "$ok" ] || die "PWD '$PWD_REAL' outside sandbox allowlist (${ALLOW_ROOTS[*]})"
 
-# 2. Define sensitive paths to mask
+# ── Masks (after the PWD bind — last mount wins) ───────────────────────
 DIRS=("$HOME/.ssh" "$HOME/.aws" "$HOME/.azure" "$HOME/.config/gcloud" "$HOME/.gnupg" "$HOME/.kube" "$HOME/.docker" "$HOME/.config/hermes")
 FILE_MASKS=("$HOME/.netrc" "$HOME/.bash_history" "$HOME/.zsh_history" "$HOME/.python_history" "$HOME/.config/hermes/.env" "$HOME/.config/hermes/lcm.db")
+MASK_ARGS=()
+for f in "${FILE_MASKS[@]}"; do [ -f "$f" ] && MASK_ARGS+=(--bind /dev/null "$f"); done
+for d in "${DIRS[@]}";      do [ -d "$d" ] && MASK_ARGS+=(--tmpfs "$d"); done
 
-TMPFS_ARGS=()
-# Order matters: file binds FIRST, then dir tmpfs — the dir tmpfs must be
-# the LAST mount so it covers (hides) both the PWD bind and any file binds
-# inside it (e.g. ~/.config/hermes/.env lives inside the masked dir
-# ~/.config/hermes; a /dev/null bind applied after the tmpfs would win and
-# make the file visible again).
-for f in "${FILE_MASKS[@]}"; do
-    [ -f "$f" ] && TMPFS_ARGS+=(--bind /dev/null "$f")
-done
-for d in "${DIRS[@]}"; do
-    [ -d "$d" ] && TMPFS_ARGS+=(--tmpfs "$d")
-done
-
-# 3. Network isolation by default. Opt-in via SANDBOX_NET=1
 NET_ARGS=(--unshare-net)
-if [ "${SANDBOX_NET:-0}" = "1" ]; then
-    NET_ARGS=()
+[ "${SANDBOX_NET:-0}" = "1" ] && NET_ARGS=()
+
+# PWD bind mode: read-only default, rw opt-in (Docker parity)
+PWD_BIND=(--ro-bind "$PWD_REAL" "$PWD_REAL")
+[ "${SANDBOX_RW:-0}" = "1" ] && PWD_BIND=(--bind "$PWD_REAL" "$PWD_REAL")
+
+# Optional tmpfs size cap (probe; bwrap builds differ)
+SIZE_ARGS=()
+if [ -n "${BWRAP_TMPFS_SIZE:-}" ]; then
+  if bwrap --unshare-user --die-with-parent --ro-bind / / --proc /proc --dev /dev \
+       --tmpfs /tmp --size "$BWRAP_TMPFS_SIZE" --chdir / true 2>/dev/null; then
+    SIZE_ARGS=(--size "$BWRAP_TMPFS_SIZE")
+  else
+    echo "WARN: this bwrap rejects --size; tmpfs left unbounded" >&2
+  fi
 fi
 
-# 4. Execute bwrap with strict namespace isolation
-#    Mount order matters: masks/tmpfs come AFTER --bind "$PWD", so the last
-#    mount wins and credential paths stay overlaid even when PWD is inside one.
-#    bwrap cannot CREATE mount points under a read-only root (EROFS), so only
-#    tmpfs over paths that exist on the host: /tmp and /var/tmp always provide
-#    fresh scratch; /workspace is mounted only when the host has such a dir.
 WORKSPACE_ARGS=()
 [ -d /workspace ] && WORKSPACE_ARGS+=(--tmpfs /workspace)
 
-# 5. User-namespace preflight (R-05): refuse to run if user namespaces are
-#    unavailable — silently degrading would weaken the isolation contract.
+# User-namespace preflight (fail-closed)
 if ! bwrap --unshare-user --die-with-parent --ro-bind / / --proc /proc --dev /dev \
-        --unshare-pid --unshare-uts --unshare-ipc --new-session --chdir / true 2>/dev/null; then
-    echo "FATAL: bwrap --unshare-user unavailable (kernel.unprivileged_userns_clone=0?)." >&2
-    exit 1
+     --unshare-pid --unshare-uts --unshare-ipc --new-session --chdir / true 2>/dev/null; then
+  die "bwrap --unshare-user unavailable (kernel.unprivileged_userns_clone=0?)"
 fi
 
-# NOTE (r3): a --bind /dev/null /proc/sysrq-trigger mask does NOT take effect
-# in this bwrap version (the --proc mount wins regardless of option order —
-# verified empirically). The real protection is the user namespace: writes
-# to /proc/sysrq-trigger require CAP_SYS_ADMIN in the INITIAL userns, so the
-# file is visible but unwritable (echo 1 > ... -> Permission denied, EPERM).
 exec bwrap \
-    --ro-bind / / \
-    --bind "$PWD" "$PWD" \
-    --tmpfs /tmp \
-    --tmpfs /var/tmp \
-    "${WORKSPACE_ARGS[@]}" \
-    "${TMPFS_ARGS[@]}" \
-    --proc /proc \
-    --dev /dev \
-    --tmpfs /proc/sys \
-    --tmpfs /sys/firmware \
-    --unshare-user \
-    --unshare-pid \
-    --unshare-uts \
-    --unshare-ipc \
-    --unshare-cgroup-try \
-    --new-session \
-    "${NET_ARGS[@]}" \
-    --die-with-parent \
-    --chdir "$PWD" \
-    bash "$@"
+  --ro-bind / / \
+  "${PWD_BIND[@]}" \
+  --tmpfs /tmp "${SIZE_ARGS[@]}" \
+  --tmpfs /var/tmp \
+  "${WORKSPACE_ARGS[@]}" \
+  "${MASK_ARGS[@]}" \
+  --proc /proc \
+  --dev /dev \
+  --tmpfs /proc/sys \
+  --tmpfs /sys/firmware \
+  --unshare-user \
+  --unshare-pid \
+  --unshare-uts \
+  --unshare-ipc \
+  --unshare-cgroup-try \
+  --new-session \
+  "${NET_ARGS[@]}" \
+  --die-with-parent \
+  --chdir "$PWD_REAL" \
+  bash "$@"

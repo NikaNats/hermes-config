@@ -1,89 +1,84 @@
 #!/usr/bin/env bash
-# Docker Zero-Trust Sandbox (hermes-sandbox image).
-# - Drops ALL capabilities, enforces read-only rootfs, no-new-privileges.
-# - Host PWD is mounted Read-Only by default (SANDBOX_RW=1 opts in to rw).
-# - NETWORK=host is hard-blocked (default network: none).
-#
-# Env overrides:
-#   HERMES_SANDBOX_IMAGE  image name (default hermes-sandbox)
-#   NETWORK               none | bridge  (default none — host is forbidden)
-#   MEM_LIMIT             e.g. 4g (default 4g)
-#   CPU_LIMIT             e.g. 2   (default 2)
-#   SANDBOX_RW            1 = mount host PWD read-write (default: read-only)
+# Docker Zero-Trust Sandbox (R4). Changes vs R-04:
+#  - PWD guard is an ALLOWLIST (was: 2-entry denylist) — C-2
+#  - Protected-path refusal is explicit (credential dirs, system trees, /mnt)
+#  - NETWORK allowlisted to none|bridge (container:/host/anything else FATAL) — M-2
+#  - MEM_LIMIT/CPU_LIMIT validated before reaching docker — M-2
+#  - Interactive TTY auto-detected (works from cron/CI) — M-2
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-# ── PWD guard (parity with bwrap-shell.sh) ──────────────────────────
-# Refuse to sandbox from broad directories. Even with --cap-drop ALL
-# and a non-root user, a rw bind of / or $HOME exposes the full user
-# tree to untrusted code.
-case "$PWD" in
-    "$HOME"|"$HOME/"|"/")
-        echo "FATAL: Refusing to sandbox from '$PWD'." >&2
-        echo "       cd into a specific project directory first." >&2
-        exit 1
-        ;;
-esac
+die() { echo "FATAL: $*" >&2; exit 1; }
 
-# Guard against colons in PWD (Docker -v uses ':' as delimiter)
-case "$PWD" in
-    *:*)
-        echo "FATAL: PWD contains ':' — Docker volume syntax break." >&2
-        exit 1
-        ;;
-esac
-# ─────────────────────────────────────────────────────────────────────
+# ── Allowlist PWD guard ────────────────────────────────────────────────
+PWD_REAL="$(realpath -e -- "$PWD" 2>/dev/null)" || die "cannot resolve PWD"
 
+PROTECTED=(
+  "$HOME/.ssh" "$HOME/.aws" "$HOME/.azure" "$HOME/.config/gcloud"
+  "$HOME/.gnupg" "$HOME/.kube" "$HOME/.docker" "$HOME/.config/hermes"
+  "$HOME/.netrc" "$HOME/.bash_history"
+  /etc /boot /usr /bin /sbin /var /root /mnt /media /opt /srv
+)
+for p in "${PROTECTED[@]}"; do
+  case "$PWD_REAL" in "$p"|"$p"/*) die "refusing to sandbox inside protected path: $PWD_REAL";; esac
+done
+
+ALLOW_ROOTS=("$HOME/src" "$HOME/agent/workspaces")
+if [ -n "${SANDBOX_ALLOW_DIR:-}" ]; then
+  ALLOW_ROOTS+=("$(realpath -e -- "$SANDBOX_ALLOW_DIR" || die "SANDBOX_ALLOW_DIR invalid")")
+fi
+ok=""
+for r in "${ALLOW_ROOTS[@]}"; do
+  case "$PWD_REAL" in "$r"|"$r"/*) ok=1;; esac
+done
+[ -n "$ok" ] || die "PWD '$PWD_REAL' outside sandbox allowlist (${ALLOW_ROOTS[*]}). Set SANDBOX_ALLOW_DIR to extend."
+case "$PWD_REAL" in *:*) die "PWD contains ':' — Docker volume syntax break.";; esac
+
+# ── Validated inputs ───────────────────────────────────────────────────
 IMAGE="${HERMES_SANDBOX_IMAGE:-hermes-sandbox}"
 NETWORK="${NETWORK:-none}"
 MEM_LIMIT="${MEM_LIMIT:-4g}"
 CPU_LIMIT="${CPU_LIMIT:-2}"
 
-# Hard block host networking
-if [ "$NETWORK" = "host" ]; then
-    echo "FATAL: NETWORK=host is forbidden. Sandbox requires network isolation." >&2
-    exit 1
-fi
+case "$NETWORK" in
+  none|bridge) ;;
+  *) die "NETWORK='$NETWORK' not allowed (none|bridge only; host/container:* forbidden)" ;;
+esac
+[[ "$MEM_LIMIT" =~ ^[0-9]+[bkmgtBKMGT]?$ ]] || die "MEM_LIMIT='$MEM_LIMIT' invalid (e.g. 4g)"
+[[ "$CPU_LIMIT" =~ ^[0-9]+(\.[0-9]+)?$ ]]   || die "CPU_LIMIT='$CPU_LIMIT' invalid (e.g. 2)"
 
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "FATAL: Image '$IMAGE' not found. Build it first:" >&2
-    echo "  docker build -t hermes-sandbox $(cd "$(dirname "$0")/.." && pwd)/sandbox" >&2
-    exit 1
-fi
+docker image inspect "$IMAGE" >/dev/null 2>&1 || {
+  echo "FATAL: Image '$IMAGE' not found. Build it first:" >&2
+  echo "  docker build -t hermes-sandbox $(cd "$(dirname "$0")/.." && pwd)/sandbox" >&2
+  exit 1
+}
 
-# Default to Read-Only host mount. Opt-in to RW via SANDBOX_RW=1
 MOUNT_OPTS="ro"
-if [ "${SANDBOX_RW:-0}" = "1" ]; then
-    MOUNT_OPTS="rw"
-fi
+[ "${SANDBOX_RW:-0}" = "1" ] && MOUNT_OPTS="rw"
 
-# R-04: kernel-resource containment. --memory-swap = --memory disables swap
-# spill onto the host; --pids-limit ceilings fork bombs; ulimits bound FDs and
-# processes. Seccomp: Docker's default profile applies unless
-# --security-opt seccomp=unconfined; set SECCOMP_PROFILE=/path/seccomp.json to
-# drop in a tighter profile (must be a full replacement profile).
 SECCOMP_ARGS=()
-if [ -n "${SECCOMP_PROFILE:-}" ]; then
-    SECCOMP_ARGS=(--security-opt "seccomp=$SECCOMP_PROFILE")
-fi
+[ -n "${SECCOMP_PROFILE:-}" ] && SECCOMP_ARGS=(--security-opt "seccomp=$SECCOMP_PROFILE")
 
-exec docker run --rm -it \
-    --init \
-    --user "$(id -u):$(id -g)" \
-    --security-opt no-new-privileges:true \
-    --cap-drop ALL \
-    --read-only \
-    --tmpfs /tmp:rw,noexec,nosuid,size=512m \
-    --tmpfs /scratch:rw,noexec,nosuid,size=1g \
-    --memory "$MEM_LIMIT" \
-    --memory-swap "$MEM_LIMIT" \
-    --pids-limit 256 \
-    --ulimit nofile=1024:2048 \
-    --ulimit nproc=256:256 \
-    --cpus "$CPU_LIMIT" \
-    "${SECCOMP_ARGS[@]}" \
-    --network "$NETWORK" \
-    -v "$PWD:/work:${MOUNT_OPTS},rprivate" \
-    -w /work \
-    "$IMAGE" \
-    bash "$@"
+RUN_FLAGS=(--rm -i)
+[ -t 0 ] && RUN_FLAGS+=(-t)
+
+exec docker run "${RUN_FLAGS[@]}" \
+  --init \
+  --user "$(id -u):$(id -g)" \
+  --security-opt no-new-privileges:true \
+  --cap-drop ALL \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=512m \
+  --tmpfs /scratch:rw,noexec,nosuid,size=1g \
+  --memory "$MEM_LIMIT" \
+  --memory-swap "$MEM_LIMIT" \
+  --pids-limit 256 \
+  --ulimit nofile=1024:2048 \
+  --ulimit nproc=256:256 \
+  --cpus "$CPU_LIMIT" \
+  "${SECCOMP_ARGS[@]}" \
+  --network "$NETWORK" \
+  -v "$PWD_REAL:/work:${MOUNT_OPTS},rprivate" \
+  -w /work \
+  "$IMAGE" \
+  bash "$@"
