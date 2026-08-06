@@ -7,7 +7,7 @@
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform: WSL2 / Ubuntu 26.04](https://img.shields.io/badge/platform-WSL2%20%2F%20Ubuntu%2026.04-brightgreen)
-![Hermes Agent v0.19.1](https://img.shields.io/badge/Hermes%20Agent-v0.19.1-blueviolet)
+![Hermes Agent v0.20.0](https://img.shields.io/badge/Hermes%20Agent-v0.20.0-blueviolet)
 ![Model: deepseek-v4-flash-free](https://img.shields.io/badge/model-deepseek--v4--flash--free-informational)
 ![Audit: 53 PASS / 0 FAIL / 6 INFO](https://img.shields.io/badge/audit-53%20PASS%20%2F%200%20FAIL%20%2F%206%20INFO-green)
 
@@ -40,7 +40,7 @@ if the machine is lost, the whole system can be rebuilt and re-verified with the
 | Layer | Choice | Verified on this machine |
 |---|---|---|
 | OS | WSL2, Ubuntu 26.04 LTS (Resolute Raccoon), systemd | kernel `6.18.33.2-microsoft-standard-WSL2` |
-| Agent | Hermes Agent v0.19.1 (git install, pinned) | `~/.hermes/hermes-agent` |
+| Agent | Hermes Agent v0.20.0 (git install, pinned) | `~/.hermes/hermes-agent` |
 | Model provider | OpenCode Zen (`opencode-zen`) | `https://opencode.ai/zen/v1`, `api_mode: chat_completions` |
 | Model | `deepseek-v4-flash-free` | set via `hermes model` |
 | Config home | `$HERMES_HOME = ~/.config/hermes` | active profile: `default` |
@@ -59,7 +59,7 @@ if the machine is lost, the whole system can be rebuilt and re-verified with the
    (C:\Users\Nika)  │  /etc/wsl.conf: appendWindowsPath=false        │
                     │                                                │
                     │  ┌──────────────────────────────────────────┐  │
-                    │  │  Hermes Agent v0.19.1                    │  │
+                    │  │  Hermes Agent v0.20.0                    │  │
                     │  │  $HERMES_HOME=~/.config/hermes           │  │
                     │  │  SOUL.md ──symlink──► hermes-config      │  │
                     │  │  prompts/ ──symlink─► hermes-config      │  │
