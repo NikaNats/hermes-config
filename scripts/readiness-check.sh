@@ -138,8 +138,8 @@ except Exception:
     # Catch-all: yaml.YAMLError, PermissionError, etc. -> no false PASS
     print(0)
 " 2>/dev/null || echo 0)
-[ "$DCNT" -ge 71 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
-  || bad "destructive commands blocked (deny list: $DCNT patterns, expected >= 71)"
+[ "$DCNT" -ge 130 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
+  || bad "destructive commands blocked (deny list: $DCNT patterns, expected >= 130)"
 
 note "filesystem ACLs: not natively supported (OS perms + .agentignore instead)"
 [ -f "$HOME/.agentignore" ] && [ -f "$REPO/.gitignore" ] \
@@ -165,7 +165,16 @@ if [ -d "$HERMES_HOME/plugins/rtk-rewrite" ]; then
 else
   note "RTK plugin not installed (optional: rtk init --agent hermes)"
 fi
-grep -q 'rtk-rewrite' "$CFG" && ok "RTK enabled (plugins.enabled: rtk-rewrite)" \
+RTK_ON=$(CFG_PATH="$CFG" python3 -c "
+import os, yaml
+try:
+    cfg = yaml.safe_load(open(os.environ['CFG_PATH'])) or {}
+    en = ((cfg.get('plugins') or {}).get('enabled')) or []
+    print('yes' if isinstance(en, list) and 'rtk-rewrite' in en else 'no')
+except Exception:
+    print('no')
+" 2>/dev/null || echo no)
+[ "$RTK_ON" = "yes" ] && ok "RTK enabled (plugins.enabled contains rtk-rewrite)" \
   || note "rtk-rewrite not in plugins.enabled (optional)"
 if has rtk; then
   ok "rtk binary on PATH ($(rtk --version 2>/dev/null | head -1))"
@@ -185,7 +194,7 @@ grep -qE '^[[:space:]]*engine:[[:space:]]*lcm[[:space:]]*$' "$CFG" && ok "contex
 # ── LCM redaction gate ──────────────────────────────────────────────
 if grep -qE '^[[:space:]]*engine:[[:space:]]*lcm[[:space:]]*$' "$CFG" 2>/dev/null; then
     # LCM is active — redaction MUST be enabled
-    if grep -q 'LCM_SENSITIVE_PATTERNS_ENABLED=true' "$HERMES_HOME/.env" 2>/dev/null; then
+    if grep -Eq '^[[:space:]]*LCM_SENSITIVE_PATTERNS_ENABLED=true([[:space:]]|$)' "$HERMES_HOME/.env" 2>/dev/null; then
         ok "LCM secret redaction enabled (LCM_SENSITIVE_PATTERNS_ENABLED=true)"
     else
         bad "LCM active but LCM_SENSITIVE_PATTERNS_ENABLED not set to true in $HERMES_HOME/.env"
@@ -240,7 +249,9 @@ try:
     deny = set(deny) if isinstance(deny, list) else set()
 except Exception:
     print('missing'); sys.exit(0)
-need = {'sudo *', 'rm -rf /', 'rm -rf ~', 'git push --force*', '/usr/bin/sudo *', 'env sudo *'}
+need = {'sudo *', 'rm -rf /', 'rm -rf ~', 'git push --force*', 'git push -f*',
+        '/usr/bin/sudo *', 'env sudo *', 'rm -rf --no-preserve-root*',
+        'rm --recursive*', 'poweroff*', 'doas *', 'pkexec *', 'git push --mirror*'}
 print('ok' if need.issubset(deny) else 'missing:' + ','.join(sorted(need - deny)))
 " 2>/dev/null || echo missing)
 case "$SAFETY" in
@@ -298,10 +309,51 @@ fi
 
 BACKUP_FOUND=""
 for f in "$HOME"/ubuntu-backup-*.tar /mnt/c/Users/*/ubuntu-backup-*.tar; do
-  [ -f "$f" ] && BACKUP_FOUND="$f"
+  [ -s "$f" ] || continue                                          # zero-byte fails
+  [ "$(dd if="$f" bs=1 skip=257 count=5 2>/dev/null)" = "ustar" ] || continue
+  BACKUP_FOUND="$f"
 done
-[ -n "$BACKUP_FOUND" ] && ok "WSL export backup exists ($BACKUP_FOUND)" \
-  || bad "WSL export backup exists (none found — run in PowerShell: wsl --export Ubuntu ubuntu-backup-<date>.tar)"
+if [ -n "$BACKUP_FOUND" ]; then
+  ok "WSL export backup exists ($BACKUP_FOUND)"
+  BD="$(basename "$BACKUP_FOUND" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1 || true)"
+  if [ -n "$BD" ]; then
+    AGE=$(( ( $(date +%s) - $(date -d "$BD" +%s 2>/dev/null || date +%s) ) / 86400 ))
+    if [ "$AGE" -le 30 ]; then ok "backup freshness (${AGE}d old)";
+    else note "backup stale (${AGE}d — refresh: wsl --export Ubuntu <file>.tar)"; fi
+  fi
+else
+  bad "WSL export backup exists (none valid/non-empty — run in PowerShell: wsl --export Ubuntu ubuntu-backup-<date>.tar)"
+fi
+# R4 (C-4, H-3, L-4): commit-time secret scan, git remote, repo .gitignore, corpus
+# pre-commit's generated hook is a generic shim (hook-impl --config=...) — the
+# gitleaks wiring lives in .pre-commit-config.yaml, so the check is structural:
+# shim installed AND gitleaks configured.
+if [ -f "$REPO/.git/hooks/pre-commit" ] && grep -q 'pre-commit' "$REPO/.git/hooks/pre-commit" 2>/dev/null \
+   && grep -q 'gitleaks' "$REPO/.pre-commit-config.yaml" 2>/dev/null; then
+  ok "commit-time secret scan wired (.git/hooks/pre-commit -> pre-commit -> gitleaks)"
+else
+  bad "commit-time secret scan wired (run: pipx install pre-commit && pre-commit install)"
+fi
+
+if git -C "$REPO" remote get-url origin >/dev/null 2>&1; then
+  ok "git remote configured (repo recoverable off-box)"
+else
+  bad "git remote configured (none — 1-Click Recovery cannot clone; git remote add origin ... && git push -u origin main)"
+fi
+
+GITIGNORE_MIN=(.env '.env.*' '*.pem' '*.key' id_rsa)
+GI_MISSING=""
+for pat in "${GITIGNORE_MIN[@]}"; do
+  grep -qxF "$pat" "$REPO/.gitignore" 2>/dev/null || GI_MISSING="$GI_MISSING $pat"
+done
+[ -z "$GI_MISSING" ] && ok "repo .gitignore contains secret patterns" \
+  || bad "repo .gitignore missing patterns:$GI_MISSING"
+
+if bash "$REPO/scripts/hardline-corpus-test.sh" >/dev/null 2>&1; then
+  ok "hardline bypass corpus passes (scripts/hardline-corpus-test.sh)"
+else
+  bad "hardline bypass corpus passes (regression in scripts/hardline-check.sh)"
+fi
 
 # ---------------------------------------------------- Non-coding use
 sec "Non-Coding Use"
