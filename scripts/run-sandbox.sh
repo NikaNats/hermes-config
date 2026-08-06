@@ -57,7 +57,15 @@ MOUNT_OPTS="ro"
 [ "${SANDBOX_RW:-0}" = "1" ] && MOUNT_OPTS="rw"
 
 SECCOMP_ARGS=()
-[ -n "${SECCOMP_PROFILE:-}" ] && SECCOMP_ARGS=(--security-opt "seccomp=$SECCOMP_PROFILE")
+# R-14: default to the repo's hardened seccomp profile when present; opt out
+# with SECCOMP_PROFILE=none (or point SECCOMP_PROFILE at a custom path).
+if [ -z "${SECCOMP_PROFILE:-}" ]; then
+  REPO_PROFILE="$(cd "$(dirname "$0")/.." && pwd)/sandbox/hermes-seccomp.json"
+  [ -f "$REPO_PROFILE" ] && SECCOMP_PROFILE="$REPO_PROFILE"
+fi
+if [ -n "${SECCOMP_PROFILE:-}" ] && [ "$SECCOMP_PROFILE" != "none" ]; then
+  SECCOMP_ARGS=(--security-opt "seccomp=$SECCOMP_PROFILE")
+fi
 
 RUN_FLAGS=(--rm -i)
 [ -t 0 ] && RUN_FLAGS+=(-t)

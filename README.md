@@ -64,7 +64,7 @@ if the machine is lost, the whole system can be rebuilt and re-verified with the
                     │  │  SOUL.md ──symlink──► hermes-config      │  │
                     │  │  prompts/ ──symlink─► hermes-config      │  │
                     │  │  config.yaml: approvals.mode=smart       │  │
-                    │  │              approvals.deny: 130 patterns │  │
+                    │  │              approvals.deny: 137 patterns │  │
                     │  │              security.redact_secrets=true│  │
                     │  │  model: opencode-zen / deepseek-v4       │  │
                     │  └──────────────────────────────────────────┘  │
@@ -147,7 +147,7 @@ checked artifact in this repo or on the OS (`references/safety-model.md`).
 | # | Layer | Implementation |
 |---|---|---|
 | 1 | Prompt rules | `SOUL.md` principles + Safety & Boundaries |
-| 2 | Hermes config permissions | `config.yaml` `approvals.deny` — **deterministic block** (130 patterns) |
+| 2 | Hermes config permissions | `config.yaml` `approvals.deny` — **deterministic block** (137 patterns) |
 | 3 | OS user permissions | non-root user `nika` (uid 1000); **no passwordless sudo** |
 | 4 | Filesystem boundaries | `~/agent/{reports,artifacts,downloads,workspaces}` + repo tree |
 | 5 | Command policy | `references/approval-matrix.md` + `scripts/hardline-check.sh` (shell-layer scanner) |
@@ -166,7 +166,7 @@ enforced by Hermes at the tool layer — a matching command cannot run. `smart_p
 `scripts/hardline-check.sh` (R-02) closes the bypasses prefix globs cannot see
 (pipe-to-shell, base64-to-shell, remote-fetch substitution, eval/exec of fetched content).
 
-### approvals.deny — 130 forbidden command patterns
+### approvals.deny — 137 forbidden command patterns
 
 Enforced by Hermes at the tool layer: the agent **cannot run** these at all
 (verified in `~/.config/hermes/config.yaml`).
@@ -256,6 +256,11 @@ relative `.` and `..` targets, privilege-escalation wrappers (`doas*`, `pkexec*`
 `systemd-run`, `crontab -r`), anti-forensics (`shred`, `history -c`), and
 permission extremes (`chmod -R 000 *`). The authoritative list lives in
 `config.yaml` and is verified structurally by `scripts/readiness-check.sh`.
+The R-14 round (2026-08-07) added 7 container-escape
+patterns (rows 131–137): `docker run * -v /*`, `docker run * -v=/*`,
+`docker run * --volume /*`, `docker run * --mount type=bind*`, and the
+`docker create *` equivalents — closing the `-v /:/host` host-root mount
+vector at the approvals layer (hardline rule 13 covers it at the scanner).
 
 Notes (from `references/destructive-commands.md`):
 
@@ -1005,6 +1010,7 @@ Each `references/*.md` is one spec section (3–7), kept current with the live m
 | Ext | `rtk-guide.md` | RTK (Rust Token Killer): output compression, plugin setup, config |
 | Ext | `browser-guide.md` | Browser automation: agent-browser + local Chromium + self-hosted Firecrawl (Docker, :3002), hybrid routing, SSRF semantics |
 | Ext | `zero-trust-remediation.md` | Zero-trust hardening: sandbox rewrites, deny-list additions, audit fixes + verification (2026-08-05) |
+| Ext | `blueprint-review.md` | Claim-by-claim audit of the external zero-trust blueprint: verified/corrected/fabricated verdicts + R-14 fixes (docker escape, find-exec gap, seccomp, Firecrawl loopback) (2026-08-07) |
 
 ---
 

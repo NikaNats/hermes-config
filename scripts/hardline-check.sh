@@ -45,8 +45,12 @@ scan '(^|[;&|/[:space:]])((shutdown|reboot|poweroff|halt|telinit|mkfs[a-z0-9.]*|
   && block "system power / filesystem / raw-device operation"
 
 # 8. find on dangerous roots with -delete / -exec|-ok of dangerous cmds
-scan 'find[[:space:]]+(/|/boot|/etc|/home|/root|/usr|/var|~|\$HOME|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)([[:space:]]|$)[^;&|]*(-delete|-exec[[:space:]]+(rm|sudo|dd|mkfs|sh)|-ok[[:space:]]+(rm|sudo))' \
+scan 'find[[:space:]]+(/|/boot|/etc|/home|/root|/usr|/var|~|\$HOME|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)([[:space:]]|$)[^;&|]*(-delete|-exec[[:space:]]+(rm|sudo|dd|mkfs|sh|bash|zsh|dash)|-ok[[:space:]]+(rm|sudo))' \
   && block "find -delete/-exec against system tree"
+
+# 8b. find -exec <shell> -c on ANY root (payload may contain anything; R-14)
+scan 'find[[:space:]]+[^;&|]*-exec[[:space:]]+(sh|bash|zsh|dash)[[:space:]]+-c' \
+  && block "find -exec shell -c invocation"
 
 # 9. xargs as an execution wrapper for dangerous commands
 scan 'xargs[[:space:]]+(-[A-Za-z0-9]+[[:space:]]+)*(sudo|rm|dd|mkfs|sh|bash|shred|chmod|chown)([[:space:]]|$)' \
@@ -63,5 +67,14 @@ scan '(curl|wget)[^;&|]*[[:space:]](-o|-O|--output|--output-document)[[:space:]]
 # 12. Force-push / mirror / ref deletion (parity with deny list rule 4; H-1)
 scan 'git[[:space:]]+push[[:space:]]+(-f|--force[a-z-]*|--mirror|--delete)([[:space:]]|$)' \
   && block "force-push / mirror / ref deletion"
+
+# 13. Container escape: docker run/create/exec bind-mounting host paths into a
+#     container (verified vector: -v /:/host reads the whole host). Covers
+#     whitespace and '=' separators and the --mount source= form. Named volumes
+#     (source does not start with /, ~, $, ..) and docker ps/logs remain allowed.
+scan 'docker[[:space:]]+(run|create|exec)[^;&|]*(-v|--volume)([[:space:]]|=)(")?(/|~|\$HOME|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\.\.)' \
+  && block "docker bind-mount of host path"
+scan 'docker[[:space:]]+(run|create|exec)[^;&|]*--mount[^;&|]*source=(")?(/|~|\$HOME|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\.\.)' \
+  && block "docker --mount bind of host path"
 
 exit 0
