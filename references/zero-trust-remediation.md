@@ -166,7 +166,7 @@ Follow-up required: Test 4 (sudoers apply — user action, see §7).
 ## 7. Follow-up (user action)
 
 - Apply NOEXEC sudoers (agent cannot sudo by policy):
-  `sudo bash -c 'cat ~/src/hermes-config/references/sudoers-hermes-readonly.example > /etc/sudoers.d/hermes-readonly'`
+  `sudo install -m 0440 -o root -g root ~/src/hermes-config/references/sudoers-hermes-readonly.example /etc/sudoers.d/hermes-readonly`
   then `sudo visudo -c`, then verify the pager escape is blocked:
   `sudo systemctl status ssh` → inside pager `!/bin/bash` → "Operation not permitted".
   Rollback: `sudo rm /etc/sudoers.d/hermes-readonly && sudo visudo -c`.

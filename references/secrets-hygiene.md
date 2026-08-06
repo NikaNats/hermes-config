@@ -21,8 +21,13 @@
 - Do not log them; redact from output.
 - Rotate immediately on any suspected leak.
 
-## Scanning (not installed yet)
+## Scanning (commit-time, verified)
 
+    # Commit-time: pre-commit + gitleaks v8.30.1 (installed, verified)
+    pre-commit install
+    pre-commit run gitleaks --all-files    # repo-wide baseline scan
+
+    # Optional broader sweep (not installed):
     go install github.com/gitleaks/gitleaks/v8@latest
     gitleaks detect --verbose
 

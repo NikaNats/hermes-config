@@ -54,9 +54,13 @@ reordered flags. Run:
 `approvals.smart_policy` rule 9 instructs the Guardian to invoke it pre-execution
 on any command not already deny-listed.
 
-## Policy-only (documented, require human review — not shell-prefix matchable)
+## Policy-only (documented, require human review)
 
-    systemctl stop/disable on production services
+`systemctl stop*` and `systemctl disable*` ARE prefix-denied for direct agent
+invocation (deny list rows 18–19). What the prefix matcher cannot see —
+chained/sudo-mediated variants and SQL statements — stays policy-only:
+
+    sudo systemctl stop <service>            # sudo denied too; human runs it
     DROP TABLE / TRUNCATE / DELETE FROM without WHERE
     database migrations
 

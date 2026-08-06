@@ -58,6 +58,13 @@ Key security semantics (verified in `tools/browser_tool.py`):
   `config_defaults.py` (cloud metadata 169.254.169.254, RFC1918) — relevant
   to web tooling and cloud-mode browser calls.
 
+> **Deployment-context warning:** the local-mode SSRF exemption assumes a
+> developer workstation. If this stack is ever deployed on a cloud VM or a
+> machine adjacent to internal services, local-mode browsing can reach cloud
+> metadata (169.254.169.254) and LAN targets with no gate. In that environment
+> set `TERMINAL_ENV != local` semantics (cloud/CDP backend) or disable the
+> browser toolset.
+
 ---
 
 ## Phase 2 — Local Sidecar Installation (WSL2, verified)

@@ -8,7 +8,7 @@ this table is the shared reference.
 |---|---:|---:|
 | Read source files | Allowed | No |
 | Read logs | Allowed | No |
-| Run tests | Allowed | No |
+| Run tests | Allowed **inside sandbox**; unsandboxed requires approval (package scripts run arbitrary code) | Conditional |
 | Run linters/formatters | Allowed | No |
 | Modify tracked source files | Allowed with diff review | Yes |
 | Create new files in project | Allowed | Yes |

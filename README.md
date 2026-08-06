@@ -9,7 +9,7 @@
 ![Platform: WSL2 / Ubuntu 26.04](https://img.shields.io/badge/platform-WSL2%20%2F%20Ubuntu%2026.04-brightgreen)
 ![Hermes Agent v0.19.1](https://img.shields.io/badge/Hermes%20Agent-v0.19.1-blueviolet)
 ![Model: deepseek-v4-flash-free](https://img.shields.io/badge/model-deepseek--v4--flash--free-informational)
-![Audit: 43 PASS / 0 FAIL / 11 INFO](https://img.shields.io/badge/audit-43%20PASS%20%2F%200%20FAIL%20%2F%2011%20INFO-green)
+![Audit: 49 PASS / 0 FAIL / 10 INFO](https://img.shields.io/badge/audit-49%20PASS%20%2F%200%20FAIL%20%2F%2010%20INFO-green)
 
 ---
 
@@ -63,7 +63,7 @@ if the machine is lost, the whole system can be rebuilt and re-verified with the
                     │  │  SOUL.md ──symlink──► hermes-config      │  │
                     │  │  prompts/ ──symlink─► hermes-config      │  │
                     │  │  config.yaml: approvals.mode=smart       │  │
-                    │  │              approvals.deny: 71 patterns │  │
+                    │  │              approvals.deny: 130 patterns │  │
                     │  │              security.redact_secrets=true│  │
                     │  │  model: opencode-zen / deepseek-v4       │  │
                     │  └──────────────────────────────────────────┘  │
@@ -145,7 +145,7 @@ checked artifact in this repo or on the OS (`references/safety-model.md`).
 | # | Layer | Implementation |
 |---|---|---|
 | 1 | Prompt rules | `SOUL.md` principles + Safety & Boundaries |
-| 2 | Hermes config permissions | `config.yaml` `approvals.deny` — **deterministic block** (71 patterns) |
+| 2 | Hermes config permissions | `config.yaml` `approvals.deny` — **deterministic block** (130 patterns) |
 | 3 | OS user permissions | non-root user `nika` (uid 1000); **no passwordless sudo** |
 | 4 | Filesystem boundaries | `~/agent/{reports,artifacts,downloads,workspaces}` + repo tree |
 | 5 | Command policy | `references/approval-matrix.md` + `scripts/hardline-check.sh` (shell-layer scanner) |
@@ -164,7 +164,7 @@ enforced by Hermes at the tool layer — a matching command cannot run. `smart_p
 `scripts/hardline-check.sh` (R-02) closes the bypasses prefix globs cannot see
 (pipe-to-shell, base64-to-shell, remote-fetch substitution, eval/exec of fetched content).
 
-### approvals.deny — 71 forbidden command patterns
+### approvals.deny — 130 forbidden command patterns
 
 Enforced by Hermes at the tool layer: the agent **cannot run** these at all
 (verified in `~/.config/hermes/config.yaml`).
@@ -242,6 +242,18 @@ Enforced by Hermes at the tool layer: the agent **cannot run** these at all
 | 69 | `env rm -rf *` |
 | 70 | `eval *` |
 | 71 | `exec sudo *` |
+
+The table lists the original 71 patterns (R-02 baseline). The R-04 round added
+59 more (rows 72–130 in `config.yaml`): short-flag force-push (`git push -f*`,
+`git push --mirror*`, `git push --delete*`), the power/runlevel family with
+absolute paths (`poweroff*`, `halt*`, `init 0|6`, `systemctl isolate*`,
+`/usr/sbin/shutdown*`), `dd of=*`, `rm --recursive*` / `--no-preserve-root` /
+relative `.` and `..` targets, privilege-escalation wrappers (`doas*`, `pkexec*`,
+`runuser*`, `su -c`, `command sudo`, `env -i sudo`, `timeout * sudo`, `xargs sudo`),
+`find` predicates between path and action, deferred execution (`at`, `batch`,
+`systemd-run`, `crontab -r`), anti-forensics (`shred`, `history -c`), and
+permission extremes (`chmod -R 000 *`). The authoritative list lives in
+`config.yaml` and is verified structurally by `scripts/readiness-check.sh`.
 
 Notes (from `references/destructive-commands.md`):
 
@@ -348,7 +360,7 @@ dangerous substrings anywhere on a command line (defense-in-depth at the shell l
 ## <a id="recovery"></a>📋 1-Click Recovery / Installation Guide
 
 > **Goal:** go from a wiped machine to a fully GREEN audit
-> (`bash ~/src/hermes-config/scripts/readiness-check.sh` → `43 pass, 0 fail, 11 info`, exit 0).
+> (`bash ~/src/hermes-config/scripts/readiness-check.sh` → `49 pass, 0 fail, 10 info`, exit 0).
 >
 > Commands marked **`[PowerShell]`** run on Windows; everything else runs inside WSL.
 > The agent itself cannot run `sudo` by policy — privileged steps are for *you* to run.
@@ -638,14 +650,14 @@ bash ~/src/hermes-config/scripts/readiness-check.sh
 Expected on a fully restored machine:
 
 ```text
-readiness: 43 pass, 0 fail, 11 info     # exit code 0  (any FAIL -> exit code 1)
+readiness: 49 pass, 0 fail, 10 info     # exit code 0  (any FAIL -> exit code 1)
 ```
 
-> The 11 INFO notes are documented gaps or environmental facts, not failures: distro
-> drift is OS package state (`sudo apt upgrade`), deterministic temperature is
-> model/provider-level, filesystem ACLs are OS perms + `.agentignore`, no GPG key
-> (optional), test runner is per-project, hermes-lcm is not installed (optional), and
-> pandoc/lnav/duckdb are the two optional tool groups listed in Phase 6.
+> The 10 INFO notes are documented gaps or environmental facts, not failures:
+> deterministic temperature is model/provider-level, filesystem ACLs are OS
+> perms + `.agentignore`, hermes-lcm is not installed (optional; 4 notes),
+> no GPG key (optional), test runner is per-project, and pandoc/poppler/soffice
+> + lnav/duckdb are the optional tool groups listed in Phase 6.
 > **0 FAIL is the "fully green" definition** — the script exits 0 iff FAIL=0.
 
 ### Publish this repo (MANDATORY — no remote = 1-Click Recovery cannot clone)
@@ -682,7 +694,7 @@ gh repo create hermes-config --public --source=. --remote=origin --push
 
 ### The base layer — `SOUL.md`
 
-Ten operating principles (precision, evidence, no invented facts, minimal change,
+Eleven operating principles (precision, evidence, no invented facts, minimal change,
 no secrets, untrusted external content, confirmation before destructive actions,
 validation-first) + output discipline (summary → verified findings → exact steps →
 validation/rollback) + safety boundaries (no data-destroying commands, no global state
@@ -844,14 +856,15 @@ FAIL, `1` when any item FAILs.
 bash ~/src/hermes-config/scripts/readiness-check.sh
 ```
 
-### What it checks (54 items — latest verified result: 43 PASS / 0 FAIL / 11 INFO)
+### What it checks (59 items — latest verified result: 49 PASS / 0 FAIL / 10 INFO)
 
 | Section | PASS | INFO | Sample checks |
 |---|---:|---:|---|
 | WSL Environment | 7 | 0 | WSL2 kernel, distro updated, systemd, non-root user, `.wslconfig` limits, `appendWindowsPath=false`, `~/src` on ext4 |
-| Hermes Configuration | 7 | 2 | config versioned, prompts modular, `approvals.mode=smart`, deny list ≥ 27, `.agentignore`+`.gitignore`, `redact_secrets`, logs present |
+| Hermes Configuration | 14 | 2 | config versioned, prompts modular, `approvals.mode=smart`, deny list ≥ 130, `.agentignore`+`.gitignore`, `redact_secrets`, logs present |
+| Agent Tooling (RTK / LCM) | 3 | 4 | RTK plugin installed + enabled, `rtk` binary on PATH; hermes-lcm not installed (optional, 3 INFO) + redaction check skipped |
 | Coding Workflow | 6 | 2 | git identity, branching strategy, linters present, validation required by SOUL.md, backup procedure defined |
-| Safety | 9 | 0 | no passwordless sudo, `sudo *` denied, no broad `rm -rf`, no force-push, no secret access, untrusted-content rule, injection defenses, sandbox present, WSL export backup exists |
+| Safety | 16 | 0 | no passwordless sudo, deny ≥ 130, hardline scanner + bypass corpus, `.env` 600, sandbox + bwrap, WSL export backup + freshness, pre-commit/gitleaks, git remote, `.gitignore` |
 | Non-Coding Use | 3 | 2 | report dir, research mode, sysadmin mode (doc/log tools are optional INFO) |
 
 The live reference for the human-readable checklist is `references/readiness-checklist.md`;
@@ -861,7 +874,7 @@ the script is the source of truth — the doc is a snapshot.
 
 Run the audit before letting Hermes do real work, after any system change, and as the
 final step of every recovery/restore. A commit to this repo should always be able to
-say "readiness: 43 pass, 0 fail, 11 info" (exit 0 — FAIL=0 is the green definition).
+say "readiness: 49 pass, 0 fail, 10 info" (exit 0 — FAIL=0 is the green definition).
 
 ---
 
@@ -904,7 +917,7 @@ Only for local, unpushed work; never force-push shared history (denied by policy
 2. Install Hermes + OpenCode Zen credentials (Phase 2–3).
 3. Clone this repo, re-wire symlinks, restore `config.yaml` + `.agentignore` (Phase 4–5).
 4. Install system tooling (Phase 6).
-5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **43 pass, 0 fail, 11 info** (Phase 7).
+5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **49 pass, 0 fail, 10 info** (Phase 7).
 6. Re-import the WSL tar if you want the old filesystem state, or restore project data
    from git remotes.
 
@@ -962,4 +975,4 @@ should be added before publishing the repository publicly.
 
 ---
 
-*Maintained by NikaNats. Last audit: 2026-08-06 — `readiness: 43 pass, 0 fail, 11 info` (the script is the source of truth; snapshot dated 2026-08-06).*
+*Maintained by NikaNats. Last audit: 2026-08-06 — `readiness: 49 pass, 0 fail, 10 info` (the script is the source of truth; snapshot dated 2026-08-06).*
