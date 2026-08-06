@@ -1,58 +1,60 @@
 #!/usr/bin/env bash
-# Move paths to the user trash instead of deleting (spec 5.5).
-# Usage: scripts/trash.sh <path>...
-# Prints each destination. Nanosecond timestamp + collision loop, so nothing
-# is ever silently overwritten (fixes same-second mv collisions).
+# Move paths to the user trash instead of deleting (R4).
+# Changes vs R-03: /mnt & /media removed from default allowlist (opt-in
+# TRASH_ALLOW_MOUNTS=1); size guard (TRASH_MAX_BYTES, default 1 GiB);
+# cross-device mv refusal (opt-in TRASH_ALLOW_XDEV=1); double canonical-path
+# check against TOCTOU.
 set -Eeuo pipefail
 IFS=$'\n\t'
 trap 'echo "Command failed at line $LINENO" >&2' ERR
+die() { echo "FATAL: $*" >&2; exit 1; }
 
 TRASH="$HOME/.local/share/Trash/files"
 mkdir -p "$TRASH"
+MAX_BYTES="${TRASH_MAX_BYTES:-1073741824}"   # 1 GiB
+
+ALLOWED_ROOTS=(/home /tmp)
+[ "${TRASH_ALLOW_MOUNTS:-0}" = "1" ] && ALLOWED_ROOTS+=(/mnt /media)
 
 for src in "$@"; do
-    # Handle broken symlinks: -e follows symlinks, -L checks the link itself
-    if [ ! -e "$src" ] && [ ! -L "$src" ]; then
-        echo "not found: $src" >&2
-        exit 1
-    fi
+  if [ ! -e "$src" ] && [ ! -L "$src" ]; then echo "not found: $src" >&2; exit 1; fi
+  case "$src" in ..|../*) die "refusing to trash '$src' (parent-path traversal)";; esac
 
-    # Reject path-traversal and system paths. The allow-list decision rests on
-    # the CANONICAL path (R-03): realpath resolves embedded ../ traversal and
-    # symlinked dirs (e.g. /home/nika/linkdir/file where linkdir -> /etc), so
-    # /home/nika/../../etc/passwd cannot slip past a /home/* glob. The parent
-    # dir must exist; the final component may be a broken symlink (handled by
-    # -L above) and is appended unmodified so mv moves the link, not its target.
-    case "$src" in
-        ..|../*)
-            echo "FATAL: Refusing to trash '$src' (parent-path traversal)." >&2
-            exit 1
-            ;;
-    esac
-    parent="$(realpath -e -- "$(dirname -- "$src")" 2>/dev/null)" || {
-        echo "FATAL: cannot resolve parent of '$src'" >&2
-        exit 1
-    }
-    canon="$parent/$(basename -- "$src")"
-    case "$canon" in
-        /home/*|/tmp/*|/mnt/*|/media/*) ;;
-        *)
-            echo "FATAL: Refusing to trash '$src' (resolves to '$canon', outside allowed trees)." >&2
-            exit 1
-            ;;
-    esac
+  parent="$(realpath -e -- "$(dirname -- "$src")" 2>/dev/null)" || die "cannot resolve parent of '$src'"
+  canon="$parent/$(basename -- "$src")"
 
-    # Nanosecond precision + collision loop
-    ts="$(date +%s%N)"
-    base="$TRASH/$(basename -- "$src")-$ts"
-    dst="$base"
-    counter=0
+  ok=""
+  for r in "${ALLOWED_ROOTS[@]}"; do case "$canon" in "$r"|"$r"/*) ok=1;; esac; done
+  [ -n "$ok" ] || die "refusing to trash '$src' (resolves to '$canon', outside allowed trees: ${ALLOWED_ROOTS[*]})"
 
-    while [ -e "$dst" ] || [ -L "$dst" ]; do
-        counter=$((counter + 1))
-        dst="${base}-${counter}"
-    done
+  # Size guard (du -sb works on dirs and files alike)
+  size="$(du -sb -- "$src" 2>/dev/null | cut -f1)"; size="${size:-0}"
+  if [ "$size" -gt "$MAX_BYTES" ] && [ "${TRASH_FORCE:-0}" != "1" ]; then
+    die "refusing to trash '$src': $size bytes exceeds TRASH_MAX_BYTES=$MAX_BYTES (override: TRASH_FORCE=1)"
+  fi
 
-    mv -- "$src" "$dst"
-    echo "trashed: $src -> $dst"
+  # Cross-device guard: mv across filesystems is copy+unlink — not a safe trash op.
+  # tmpfs sources (e.g. systemd /tmp) are EXEMPT: the copy+unlink is fast and
+  # RAM-backed, so the guard's cost/risk rationale does not apply. Real mounts
+  # (drvfs /mnt, other disks) stay refused unless TRASH_ALLOW_XDEV=1.
+  srcdev="$(stat -c %d -- "$src" 2>/dev/null || true)"
+  trashdev="$(stat -c %d -- "$TRASH")"
+  SRC_FSTYPE="$(findmnt -T "$src" -o FSTYPE -n 2>/dev/null || true)"
+  if [ -n "$srcdev" ] && [ "$srcdev" != "$trashdev" ] && [ "$SRC_FSTYPE" != "tmpfs" ] && [ "${TRASH_ALLOW_XDEV:-0}" != "1" ]; then
+    die "refusing to trash '$src': cross-device move (would copy+unlink). Override: TRASH_ALLOW_XDEV=1"
+  fi
+
+  ts="$(date +%s%N)"
+  base="$TRASH/$(basename -- "$src")-$ts"
+  dst="$base"; counter=0
+  while [ -e "$dst" ] || [ -L "$dst" ]; do
+    counter=$((counter + 1)); dst="${base}-${counter}"
+  done
+
+  # Re-canonicalize immediately before mv; refuse if the target moved under us
+  parent2="$(realpath -e -- "$(dirname -- "$src")" 2>/dev/null || true)"
+  [ "$parent2/$(basename -- "$src")" = "$canon" ] || die "path changed under us: '$src' — aborting"
+
+  mv -- "$src" "$dst"
+  echo "trashed: $src -> $dst"
 done
