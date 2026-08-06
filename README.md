@@ -9,7 +9,7 @@
 ![Platform: WSL2 / Ubuntu 26.04](https://img.shields.io/badge/platform-WSL2%20%2F%20Ubuntu%2026.04-brightgreen)
 ![Hermes Agent v0.19.1](https://img.shields.io/badge/Hermes%20Agent-v0.19.1-blueviolet)
 ![Model: deepseek-v4-flash-free](https://img.shields.io/badge/model-deepseek--v4--flash--free-informational)
-![Audit: 49 PASS / 0 FAIL / 10 INFO](https://img.shields.io/badge/audit-49%20PASS%20%2F%200%20FAIL%20%2F%2010%20INFO-green)
+![Audit: 53 PASS / 0 FAIL / 6 INFO](https://img.shields.io/badge/audit-53%20PASS%20%2F%200%20FAIL%20%2F%206%20INFO-green)
 
 ---
 
@@ -47,6 +47,7 @@ if the machine is lost, the whole system can be rebuilt and re-verified with the
 | Containers | Docker 29.1.3 (systemd) + `hermes-sandbox` image | user in `docker` group |
 | Shell sandbox | bubblewrap (`/usr/bin/bwrap`) | installed |
 | Version control | git, branch `main`, identity `NikaNats <nika.nacvlishvili1@gmail.com>` | global + repo-local |
+| Web scraping | Firecrawl self-hosted (Docker Compose, mendableai/firecrawl) | `~/src/firecrawl`, API on `localhost:3002` |
 
 ### How the pieces fit together
 
@@ -86,6 +87,7 @@ hermes-config/
 ├── .gitignore                  # Secret/credential ignore patterns (spec 5.6)
 ├── .gitattributes              # LF line endings everywhere (WSL/Windows interop)
 ├── .pre-commit-config.yaml     # gitleaks + shellcheck + yamllint + symlink/whitespace hooks (R-13)
+├── .gitleaks.toml              # scoped allowlist for the documented local dev dummy key (Firecrawl)
 ├── prompts/                    # Persona library (modular building blocks)
 │   ├── base.md -> ../SOUL.md   # Relative symlink — base layer is never duplicated
 │   ├── coding.md               # Principal Production Software Engineer
@@ -344,7 +346,10 @@ pre-commit run gitleaks --all-files     # scan everything now
 
 `.pre-commit-config.yaml` pins gitleaks to a verified release. Gitleaks' default
 config allow-lists obviously-fake/sequential test values by design, so unit-test
-the hook with a realistic token, not `AKIA...EXAMPLE`.
+the hook with a realistic token, not `AKIA...EXAMPLE`. `.gitleaks.toml` extends
+the default ruleset and allow-lists exactly one documented local dev dummy value
+(`fc-local-secret-key-2026`, the self-hosted Firecrawl stack key used in
+README Phase 6c / `references/browser-guide.md` Phase 7) — detection is not weakened.
 
 ### Prompt-injection defense
 
@@ -360,7 +365,7 @@ dangerous substrings anywhere on a command line (defense-in-depth at the shell l
 ## <a id="recovery"></a>📋 1-Click Recovery / Installation Guide
 
 > **Goal:** go from a wiped machine to a fully GREEN audit
-> (`bash ~/src/hermes-config/scripts/readiness-check.sh` → `49 pass, 0 fail, 10 info`, exit 0).
+> (`bash ~/src/hermes-config/scripts/readiness-check.sh` → `53 pass, 0 fail, 6 info`, exit 0).
 >
 > Commands marked **`[PowerShell]`** run on Windows; everything else runs inside WSL.
 > The agent itself cannot run `sudo` by policy — privileged steps are for *you* to run.
@@ -641,6 +646,50 @@ pre-commit install
 pre-commit run gitleaks --all-files    # baseline scan of restored tree
 ```
 
+### Phase 6c — Self-hosted Firecrawl (web scraping stack)
+
+Replicates the verified deployment (2026-08-07) — full procedure in
+`references/browser-guide.md` Phase 7 (DEPLOYED + VERIFIED on this machine).
+
+```bash
+# 1. WSL2 Docker IPv6/DNS fix (image pulls fail with "network is unreachable"):
+sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
+{"dns": ["8.8.8.8", "1.1.1.1"]}
+EOF
+sudo systemctl restart docker
+
+# 2. Clone + configure:
+git clone https://github.com/mendableai/firecrawl.git ~/src/firecrawl
+cd ~/src/firecrawl
+cp apps/api/.env.example .env
+# Append at the END of .env — docker compose uses the LAST occurrence:
+printf 'USE_DB_AUTHENTICATION=false\nTEST_API_KEY=fc-local-secret-key-2026\nPORT=3002\n' >> .env
+
+# 3. Launch + verify:
+docker compose up -d
+docker compose ps                     # api on 0.0.0.0:3002->3002/tcp
+# GET /test -> 404 "Cannot GET /test" is NORMAL; /v1/scrape is the real check:
+curl -s -X POST http://localhost:3002/v1/scrape \
+  -H 'Authorization: Bearer fc-local-secret-key-2026' \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com"}'   # -> "success": true
+
+# 4. Hermes integration (env vars; file must stay 600):
+printf 'FIRECRAWL_API_URL=http://localhost:3002\nFIRECRAWL_API_KEY=fc-local-secret-key-2026\n' >> "$HERMES_HOME/.env"
+chmod 600 "$HERMES_HOME/.env"
+```
+
+Set the routing keys in `config.yaml` (Python YAML edit — never
+`hermes config set`; see `references/browser-guide.md` § 7.7):
+
+```yaml
+browser:
+  cloud_provider: firecrawl          # public URLs -> self-hosted Firecrawl
+  auto_local_for_private_urls: true  # localhost/LAN stay on local Chromium
+web:
+  extract_backend: firecrawl
+```
+
 ### Phase 7 — Verify: the 100% GREEN audit
 
 ```bash
@@ -650,14 +699,14 @@ bash ~/src/hermes-config/scripts/readiness-check.sh
 Expected on a fully restored machine:
 
 ```text
-readiness: 49 pass, 0 fail, 10 info     # exit code 0  (any FAIL -> exit code 1)
+readiness: 53 pass, 0 fail, 6 info     # exit code 0  (any FAIL -> exit code 1)
 ```
 
-> The 10 INFO notes are documented gaps or environmental facts, not failures:
+> The 6 INFO notes are documented gaps or environmental facts, not failures:
 > deterministic temperature is model/provider-level, filesystem ACLs are OS
-> perms + `.agentignore`, hermes-lcm is not installed (optional; 4 notes),
-> no GPG key (optional), test runner is per-project, and pandoc/poppler/soffice
-> + lnav/duckdb are the optional tool groups listed in Phase 6.
+> perms + `.agentignore`, no GPG key (optional), test runner is per-project,
+> and pandoc/poppler/soffice + lnav/duckdb are the optional tool groups
+> listed in Phase 6.
 > **0 FAIL is the "fully green" definition** — the script exits 0 iff FAIL=0.
 
 ### Publish this repo (MANDATORY — no remote = 1-Click Recovery cannot clone)
@@ -856,13 +905,13 @@ FAIL, `1` when any item FAILs.
 bash ~/src/hermes-config/scripts/readiness-check.sh
 ```
 
-### What it checks (59 items — latest verified result: 49 PASS / 0 FAIL / 10 INFO)
+### What it checks (59 items — latest verified result: 53 PASS / 0 FAIL / 6 INFO)
 
 | Section | PASS | INFO | Sample checks |
 |---|---:|---:|---|
 | WSL Environment | 7 | 0 | WSL2 kernel, distro updated, systemd, non-root user, `.wslconfig` limits, `appendWindowsPath=false`, `~/src` on ext4 |
 | Hermes Configuration | 14 | 2 | config versioned, prompts modular, `approvals.mode=smart`, deny list ≥ 130, `.agentignore`+`.gitignore`, `redact_secrets`, logs present |
-| Agent Tooling (RTK / LCM) | 3 | 4 | RTK plugin installed + enabled, `rtk` binary on PATH; hermes-lcm not installed (optional, 3 INFO) + redaction check skipped |
+| Agent Tooling (RTK / LCM) | 7 | 0 | RTK plugin installed + enabled, `rtk` binary on PATH; hermes-lcm installed + enabled with redaction gate (`LCM_SENSITIVE_PATTERNS_ENABLED`) |
 | Coding Workflow | 6 | 2 | git identity, branching strategy, linters present, validation required by SOUL.md, backup procedure defined |
 | Safety | 16 | 0 | no passwordless sudo, deny ≥ 130, hardline scanner + bypass corpus, `.env` 600, sandbox + bwrap, WSL export backup + freshness, pre-commit/gitleaks, git remote, `.gitignore` |
 | Non-Coding Use | 3 | 2 | report dir, research mode, sysadmin mode (doc/log tools are optional INFO) |
@@ -874,7 +923,7 @@ the script is the source of truth — the doc is a snapshot.
 
 Run the audit before letting Hermes do real work, after any system change, and as the
 final step of every recovery/restore. A commit to this repo should always be able to
-say "readiness: 49 pass, 0 fail, 10 info" (exit 0 — FAIL=0 is the green definition).
+say "readiness: 53 pass, 0 fail, 6 info" (exit 0 — FAIL=0 is the green definition).
 
 ---
 
@@ -917,7 +966,7 @@ Only for local, unpushed work; never force-push shared history (denied by policy
 2. Install Hermes + OpenCode Zen credentials (Phase 2–3).
 3. Clone this repo, re-wire symlinks, restore `config.yaml` + `.agentignore` (Phase 4–5).
 4. Install system tooling (Phase 6).
-5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **49 pass, 0 fail, 10 info** (Phase 7).
+5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **53 pass, 0 fail, 6 info** (Phase 7).
 6. Re-import the WSL tar if you want the old filesystem state, or restore project data
    from git remotes.
 
@@ -954,7 +1003,7 @@ Each `references/*.md` is one spec section (3–7), kept current with the live m
 | Ext | `hermes-lcm-guide.md` | LCM context-memory plugin: install, config, redaction, upgrade |
 | Ext | `codegraph-guide.md` | CodeGraph semantic code-intel MCP: install, index, verify |
 | Ext | `rtk-guide.md` | RTK (Rust Token Killer): output compression, plugin setup, config |
-| Ext | `browser-guide.md` | Browser automation: agent-browser + local Chromium, hybrid routing, SSRF semantics |
+| Ext | `browser-guide.md` | Browser automation: agent-browser + local Chromium + self-hosted Firecrawl (Docker, :3002), hybrid routing, SSRF semantics |
 | Ext | `zero-trust-remediation.md` | Zero-trust hardening: sandbox rewrites, deny-list additions, audit fixes + verification (2026-08-05) |
 
 ---
@@ -975,4 +1024,4 @@ should be added before publishing the repository publicly.
 
 ---
 
-*Maintained by NikaNats. Last audit: 2026-08-06 — `readiness: 49 pass, 0 fail, 10 info` (the script is the source of truth; snapshot dated 2026-08-06).*
+*Maintained by NikaNats. Last audit: 2026-08-07 — `readiness: 53 pass, 0 fail, 6 info` (the script is the source of truth; snapshot dated 2026-08-07).*

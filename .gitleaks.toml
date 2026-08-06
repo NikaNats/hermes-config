@@ -1,0 +1,22 @@
+# hermes-config gitleaks config (auto-discovered by the pre-commit gitleaks hook).
+# Extends gitleaks' default ruleset ([extend] useDefault = true — detection is
+# NOT weakened) and adds ONE scoped allowlist for a documented local dev dummy
+# credential:
+#
+#   fc-local-secret-key-2026
+#
+# This value is the TEST_API_KEY of the SELF-HOSTED Firecrawl stack
+# (~/src/firecrawl, API on localhost:3002) and the FIRECRAWL_API_KEY in
+# $HERMES_HOME/.env. It is deliberately committed so engineers can copy-paste
+# the verification curl in README.md Phase 6c and references/browser-guide.md
+# Phase 7 § 7.6. It is NOT a real credential — it only ever authenticates the
+# local Docker stack on this machine, never any external service.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented local dev dummy key (self-hosted Firecrawl TEST_API_KEY / FIRECRAWL_API_KEY)"
+regexes = [
+  '''fc-local-secret-key-2026''',
+]

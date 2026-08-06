@@ -1,8 +1,11 @@
 # Browser Automation — Production Implementation Guide for Hermes Agent
 
-**Revision:** v1.0 (verified against Hermes source + live install, 2026-08-04)
-**Status on this machine:** local side installed (agent-browser 0.27.0 + Chromium),
-`browser:` config hardened; Firecrawl/Camofox NOT deployed (see Phase 7).
+**Revision:** v1.1 (verified against Hermes source + live install, 2026-08-07)
+**Status on this machine:** local side installed and verified (agent-browser
+0.27.0 + Chromium); **Self-Hosted Firecrawl DEPLOYED and VERIFIED** (Docker
+Compose stack on `localhost:3002`, integrated into Hermes via
+`FIRECRAWL_API_URL`/`FIRECRAWL_API_KEY` + `browser.cloud_provider: firecrawl`);
+Camofox NOT deployed (see Phase 7).
 
 > Every config key and command in this guide was verified against the installed
 > Hermes source (`hermes_cli/config_defaults.py`, `tools/browser_tool.py`,
@@ -29,11 +32,16 @@ The guide's core concept — **hybrid routing** — is real Hermes behavior:
 Chromium for localhost/LAN URLs when a cloud provider is set, instead of
 sending private traffic to the cloud.
 
-> ⚠️ **Premise correction:** the original draft assumed an existing
-> self-hosted Firecrawl stack and Camofox container. **Neither exists on this
+> ⚠️ **Premise correction (v1.0):** the original draft assumed an existing
+> self-hosted Firecrawl stack and Camofox container. **Neither existed on this
 > machine** (verified: `docker ps -a` empty, images = hermes-sandbox/ubuntu/
 > hello-world only). Phase 7 documents what standing them up actually
 > requires. The local side (Phases 2–4) works standalone.
+>
+> **v1.1 update (2026-08-07):** the Firecrawl half of that premise is now
+> true — Phase 7 was executed end-to-end and verified (self-hosted Docker
+> stack + Hermes integration). Camofox remains NOT deployed (npm path only,
+> § 7.8).
 
 ---
 
@@ -41,7 +49,7 @@ sending private traffic to the cloud.
 
 | Target URL | Routing | Verdict |
 | :--- | :--- | :--- |
-| Public Internet | Firecrawl (cloud provider) | Real but requires standing up Firecrawl first (Phase 7) |
+| Public Internet | Firecrawl (cloud provider) | Real; self-hosted stack on `localhost:3002` — DEPLOYED + verified (Phase 7) |
 | Localhost / LAN | Local Chromium via agent-browser | Real; works in local mode with no extra config |
 | Anti-detection | Camofox | Real backend (`browser.camofox` block, `CAMOFOX_URL`); installed via npm, NOT `docker run camofox-browser` |
 
@@ -114,32 +122,37 @@ the file to edit is **`$HERMES_HOME/.env`** (i.e.
 `~/.config/hermes/.env` on this machine), NOT `~/.hermes/.env`.
 
 ```bash
-# ${HERMES_HOME:-$HOME/.hermes}/.env
+# ${HERMES_HOME}/.env  (on this machine: ~/.config/hermes/.env)
 BROWSER_INACTIVITY_TIMEOUT=120   # real legacy env var; default already 120
-# Only when you actually run Firecrawl (Phase 7):
-# FIRECRAWL_API_KEY=***
-# FIRECRAWL_API_URL=http://localhost:3002
+# Self-hosted Firecrawl (Phase 7) — APPLIED on this machine, file chmod 600:
+FIRECRAWL_API_KEY=fc-local-secret-key-2026   # matches the stack's TEST_API_KEY
+FIRECRAWL_API_URL=http://localhost:3002
 ```
 
 ### 2. config.yaml — verified keys
 
 ```yaml
 browser:
-  # Local mode: DO NOT set cloud_provider until Firecrawl/Camofox exists —
-  # a configured-but-dead provider breaks every browser call.
-  # cloud_provider: firecrawl          # only after Phase 7
-  auto_local_for_private_urls: true    # default true; hybrid routing
-  allow_private_urls: false            # default false; gates cloud/CDP modes
-  restrict_evaluate: true              # OPT-IN denylist for browser_console(expression=)
-  dialog_policy: must_respond          # default; native JS dialogs need agent response
-  dialog_timeout_s: 60                 # tightening; default is 300
-  headed: false                        # default; headless in WSL2
-  record_sessions: false               # default; WebM recording off
+  cloud_provider: firecrawl          # APPLIED (Phase 7): self-hosted stack is
+                                     # live on :3002. Before Phase 7, DO NOT
+                                     # set this — a configured-but-dead provider
+                                     # breaks every browser call.
+  auto_local_for_private_urls: true  # default true; hybrid routing
+  allow_private_urls: false          # default false; gates cloud/CDP modes
+  restrict_evaluate: true            # OPT-IN denylist for browser_console(expression=)
+  dialog_policy: must_respond        # default; native JS dialogs need agent response
+  dialog_timeout_s: 60               # tightening; default is 300
+  headed: false                      # default; headless in WSL2
+  record_sessions: false             # default; WebM recording off
+web:
+  extract_backend: firecrawl         # APPLIED: web_extract → self-hosted Firecrawl
 ```
 
 Applied on this machine (via Python YAML edit, not `hermes config set`):
-`restrict_evaluate: true`, `dialog_timeout_s: 60`; everything else stays at
-default (local mode, no cloud provider).
+`browser.cloud_provider: firecrawl`, `browser.auto_local_for_private_urls: true`,
+`web.extract_backend: firecrawl` (2026-08-07), plus the earlier hardening keys
+`restrict_evaluate: true`, `dialog_timeout_s: 60`. Verify:
+`hermes config get browser.cloud_provider` → `firecrawl`.
 
 ### 3. Do NOT run this guide's toolsets command
 
@@ -239,7 +252,7 @@ hermes chat
 
 | Test | Expected (corrected) |
 | :--- | :--- |
-| 1. Public URL | Only routes through Firecrawl AFTER it is stood up (Phase 7) and `browser.cloud_provider: firecrawl` is set. Without it, local Chromium handles it. |
+| 1. Public URL | Routes through the self-hosted Firecrawl stack (`browser.cloud_provider: firecrawl`, Phase 7). Verified live: `POST /v1/scrape` → `"success": true` + clean Markdown. |
 | 2. Localhost snapshot | Works in local mode out of the box — local backend skips the private-URL gate; no cloud provider needed. |
 | 3. SSRF 169.254.169.254 | **Mode-dependent.** Blocked in cloud/CDP/containerized-terminal modes; **allowed in pure local mode by design** (`_is_local_backend()`). The draft's "even if using the local browser" is wrong. |
 | 4. `browser_console` evaluate | With `browser.restrict_evaluate: true`, sensitive primitives (cookies/storage/clipboard/network/form values) are denylisted. `allow_unsafe_evaluate: true` is the escape hatch (default false). |
@@ -249,20 +262,164 @@ Chromium navigation + DOM snapshot succeeded (see install notes).
 
 ---
 
-## Phase 7 — Firecrawl / Camofox Standing Up (NOT deployed here)
+## Phase 7 — Self-Hosted Firecrawl Deployment (DEPLOYED + VERIFIED here)
 
-Nothing from the draft's "previous setup" exists. If you want the cloud
-routes:
+Executed and verified 2026-08-07 on this machine: the stack runs from
+`~/src/firecrawl` (upstream: https://github.com/mendableai/firecrawl.git),
+serves the API on `localhost:3002`, and is wired into Hermes. Camofox is
+**not** deployed (§ 7.8).
 
-- **Firecrawl self-hosted:** clone the Firecrawl repo and run its
-  docker-compose (mendableai/firecrawl); this guide does not verify that
-  stack. Then set `FIRECRAWL_API_KEY`/`FIRECRAWL_API_URL` in
-  `${HERMES_HOME}/.env` and `browser.cloud_provider: firecrawl` (and/or
-  `web.extract_backend: firecrawl` for web_extract).
-- **Camofox:** `hermes setup` (npm path) as in Phase 5C.
+### 7.1 Prerequisites
 
-Both are optional additions; the local side (Phases 2–4) is fully functional
-without them.
+- Docker Engine + Compose v2 (this machine: Docker 29.1.3, systemd-managed).
+- `docker compose version` prints a v2 version.
+
+### 7.2 WSL2 image-pull fix (IPv6 DNS) — REQUIRED on WSL2
+
+**Symptom:** the first `docker compose up -d` fails while pulling images with
+`network is unreachable` — the daemon tries IPv6 DNS first and WSL2's NAT has
+no IPv6 route.
+
+**Fix** — pin the daemon to IPv4 DNS in `/etc/docker/daemon.json`:
+
+```json
+{"dns": ["8.8.8.8", "1.1.1.1"]}
+```
+
+Apply (the user runs this — the agent cannot `sudo` by policy):
+
+```bash
+sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
+{"dns": ["8.8.8.8", "1.1.1.1"]}
+EOF
+sudo systemctl restart docker
+```
+
+Verified on this machine: after the restart, image pulls succeed.
+
+### 7.3 Clone the Firecrawl monorepo
+
+```bash
+git clone https://github.com/mendableai/firecrawl.git ~/src/firecrawl
+cd ~/src/firecrawl
+```
+
+Verified HEAD on this machine: `1313ddb49` (`fix(api): restore the five labs
+routes dropped by the rate limit change (#4249)`).
+
+### 7.4 Configure the stack `.env`
+
+```bash
+cp apps/api/.env.example .env
+```
+
+Set these keys (dummy/local values — no real credentials):
+
+```text
+# ~/src/firecrawl/.env  — append at the END of the file
+USE_DB_AUTHENTICATION=false          # no auth DB; TEST_API_KEY is the API key
+TEST_API_KEY=fc-local-secret-key-2026
+PORT=3002
+```
+
+> ⚠️ `apps/api/.env.example` already ships `PORT=3002` and an **empty**
+> `TEST_API_KEY=` placeholder earlier in the file. Append the real values at
+> the end — docker compose dotenv semantics use the **last** occurrence
+> (verified: `docker compose exec api printenv TEST_API_KEY` → 24 chars).
+
+### 7.5 Launch the stack
+
+```bash
+cd ~/src/firecrawl
+docker compose up -d
+```
+
+First run pulls the images (needs the § 7.2 DNS fix) and starts 6 services:
+
+| Service | Role | Exposed |
+| :--- | :--- | :--- |
+| `firecrawl-api-1` | Firecrawl API + worker | `0.0.0.0:3002->3002/tcp` |
+| `firecrawl-playwright-service-1` | headless Chromium scraper backend | internal |
+| `firecrawl-redis-1` | queue / cache | internal |
+| `firecrawl-rabbitmq-1` | job broker (healthy) | internal |
+| `firecrawl-nuq-postgres-1` | database | internal |
+| `firecrawl-foundationdb-1` | state store | internal |
+
+Verify:
+
+```bash
+cd ~/src/firecrawl
+docker compose ps          # all 6 Up; rabbitmq (healthy)
+```
+
+Compose warnings about unset vars (`SEARXNG_ENDPOINT`, `MODEL_NAME`, …) are
+benign for a local scrape-only stack — they power optional AI/search features.
+
+### 7.6 Verify the API — use `/v1/scrape`, NOT `/test`
+
+`GET http://localhost:3002/test` returns Express's default 404
+(`Cannot GET /test`) — **that is normal**: `/test` is not a route. The real
+health check is the scrape endpoint:
+
+```bash
+curl -s -X POST http://localhost:3002/v1/scrape \
+  -H 'Authorization: Bearer fc-local-secret-key-2026' \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com"}' | python3 -m json.tool | head -20
+```
+
+Verified live on this machine (2026-08-07): `HTTP 200`, `"success": true`,
+`data.markdown` = clean Markdown of the target page.
+
+### 7.7 Hermes integration
+
+**1. Hermes `.env`** (`$HERMES_HOME/.env`, i.e. `~/.config/hermes/.env`):
+
+```text
+FIRECRAWL_API_URL=http://localhost:3002
+FIRECRAWL_API_KEY=fc-local-secret-key-2026
+```
+
+```bash
+chmod 600 "$HERMES_HOME/.env"    # audit requires owner-only (600/400)
+```
+
+**2. Hermes `config.yaml`** — set the routing keys (Python YAML edit, never
+`hermes config set`):
+
+```yaml
+browser:
+  cloud_provider: firecrawl          # route browser_* public URLs → Firecrawl
+  auto_local_for_private_urls: true  # keep localhost/LAN on local Chromium
+web:
+  extract_backend: firecrawl         # web_extract → Firecrawl
+```
+
+Applied on this machine; verify:
+
+```bash
+hermes config get browser.cloud_provider   # -> firecrawl
+hermes config get web.extract_backend      # -> firecrawl
+```
+
+**3. Behavior after restart:** `config.yaml` is read at session start — start a
+new `hermes chat`. Public URLs route through the self-hosted stack; localhost /
+LAN URLs stay on local agent-browser Chromium (`auto_local_for_private_urls`).
+
+### 7.8 Operations & recovery
+
+```bash
+cd ~/src/firecrawl
+docker compose ps                          # status
+docker compose logs -f api                 # follow API logs
+docker compose down                        # stop (keep volumes)
+docker compose up -d                       # start again
+docker compose pull && docker compose up -d   # upgrade the stack
+```
+
+Firecrawl is an optional addition; the local side (Phases 2–4) is fully
+functional without it. **Camofox is NOT deployed** — its only supported
+install is the npm path (`hermes setup`, Phase 5C).
 
 ---
 
@@ -270,7 +427,7 @@ without them.
 
 | Layer | Tool | Responsibility |
 | :--- | :--- | :--- |
-| Public Web Scraping | Firecrawl (self-hosted, optional) | Clean Markdown, bot-protection bypass — NOT deployed yet |
+| Public Web Scraping | Firecrawl (self-hosted, Docker) | Clean Markdown, bot-protection bypass — DEPLOYED + verified (`localhost:3002`) |
 | Interactive / Localhost | agent-browser + Chromium | Installed; fills forms, clicks, reaches WSL2 local dev servers |
 | Context Management | Hermes-LCM | LCM_LARGE_OUTPUT_* externalizes 15k DOM snapshots |
 | Security | restrict_evaluate + mode-aware SSRF gate | Denylisted JS primitives; gate enforced in cloud/CDP modes |
@@ -287,4 +444,6 @@ without them.
 - npm: https://registry.npmjs.org/agent-browser (Vercel Labs, 0.33.2
   latest; Hermes requires >= 0.25.3)
 - Camofox: https://github.com/jo-inc/camofox-browser (npm @askjo/camofox-browser)
+- Firecrawl (self-hosted): https://github.com/mendableai/firecrawl (Docker
+  Compose stack; deployed + verified on this machine, 2026-08-07)
 - Hermes docs: https://hermes-agent.nousresearch.com/docs (browser guide)
