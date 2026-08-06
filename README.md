@@ -373,7 +373,7 @@ sudo tee /etc/wsl.conf > /dev/null <<'EOF'
 systemd=true
 
 [user]
-default=nika
+default=<your-user>
 
 [interop]
 enabled=true
@@ -391,6 +391,15 @@ wsl.exe --shutdown                          # from Ubuntu: restart so wsl.conf a
 > ⚠️ `appendWindowsPath=false` removes Windows binaries from `PATH` after restart —
 > reach them via `/mnt/c/...` or add entries to `~/.bashrc` explicitly.
 
+### Phase 1.5 — Bootstrap `$HERMES_HOME` (required before Phases 4–7 reach green)
+
+```bash
+mkdir -p "$HOME/.config/hermes"
+grep -q 'export HERMES_HOME=' "$HOME/.bashrc" 2>/dev/null || \
+  printf '\n# Hermes config home (matches audited layout)\nexport HERMES_HOME="$HOME/.config/hermes"\n' >> "$HOME/.bashrc"
+export HERMES_HOME="$HOME/.config/hermes"
+```
+
 ### Phase 2 — Install Hermes Agent
 
 Official one-liner (recommended for recovery; this machine is a git install pinned to
@@ -398,12 +407,15 @@ Official one-liner (recommended for recovery; this machine is a git install pinn
 
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+# Pin the restored install to the audited commit (parity with this machine):
+cd ~/.hermes/hermes-agent && git fetch --tags && git checkout d0b87da
+# re-run the repo's install step per Hermes docs, then verify:
 ```
 
 Verify:
 
 ```bash
-hermes --version      # e.g. "Hermes Agent v0.19.1"
+hermes --version      # MUST print v0.19.1 before proceeding
 hermes doctor         # config health check
 ```
 
@@ -421,6 +433,7 @@ values are secret and never committed):
 OPENCODE_ZEN_API_KEY=<your-key>
 OPENCODE_ZEN_BASE_URL=https://opencode.ai/zen/v1
 ```
+chmod 600 "$HERMES_HOME/.env"   # audit requires owner-only (600/400)
 
 Resulting `model:` block in `config.yaml`:
 
@@ -454,72 +467,111 @@ ln -sf ~/src/hermes-config/scripts/hermes-project-init ~/bin/hermes-project-init
 > ⚠️ **Never set list keys with `hermes config set`** — it coerces scalars only and a
 > `*` inside a scalar deny entry matches *every* command (fnmatch iterates characters),
 > locking the terminal. Write list keys as real YAML (backup first, Hermes not running):
-> Requires PyYAML in system python3 (`python3 -c 'import yaml'`); on a fresh machine run
-> `python3 -m pip install --user pyyaml` (or `sudo apt install -y python3-yaml`) first.
+> Requires PyYAML in system python3 (`python3 -c 'import yaml'`); Ubuntu 26.04's PEP 668
+> blocks `pip install --user` — install with `sudo apt install -y python3-yaml` first.
 
 ```bash
 cp ~/.config/hermes/config.yaml ~/.config/hermes/config.yaml.bak
 
 python3 - <<'PY'
-import yaml
-p = '/home/nika/.config/hermes/config.yaml'
-cfg = yaml.safe_load(open(p)) or {}
-cfg['approvals'] = {
-    'mode': 'smart',
-    'cron_mode': 'deny',
-    'deny': [
-        'rm -rf /', 'rm -rf ~', 'sudo *',
-        'chmod -R 777 *', 'chown -R *',
-        'curl * | *sh', 'wget * | *sh',
-        'git push --force*', 'git reset --hard*', 'git clean -fd*',
-        'dd if=*', 'mkfs*', 'shutdown*', 'reboot*',
-        'git checkout -- .', 'git branch -D*', 'git rebase -i*',
-        'systemctl stop*', 'systemctl disable*', 'iptables -F*',
-        'docker system prune*', 'kubectl delete*',
-        'terraform destroy*', 'pulumi destroy*',
-        'ansible-playbook --check=false*', 'fdisk /dev*', 'parted /dev*',
-        'curl *|*sh', 'wget *|*sh',
-        'curl * | *python*', 'curl * | *node*', 'curl * | *ruby*', 'curl * | *perl*',
-        'wget * | *python*', 'wget * | *node*', 'wget * | *ruby*', 'wget * | *perl*',
-        '/usr/bin/sudo *', '/bin/sudo *',
-        # --- Phase B2 additions (47 total) ---
-        'env sudo *', '/usr/bin/env sudo *',
-        'rm -rf /*', 'rm -rf ~/*',
-        'git push origin +*', 'git push +*',
-        'find / -delete*', 'find / -exec rm*',
-        # --- R-02 additions (71 total): wrapper/path/flag variants ---
-        'bash -c *', 'sh -c *', 'dash -c *', 'zsh -c *',
-        '/bin/bash -c *', '/bin/sh -c *',
-        'python -c *', 'python3 -c *', 'perl -e *', 'ruby -e *', 'node -e *',
-        '/bin/rm -rf *', '/usr/bin/rm -rf *',
-        'rm -r -f *', 'rm -f -r *',
-        '(sudo *', '(rm -rf *',
-        '/usr/bin/find / -delete*', '/bin/find / -delete*',
-        'find / -exec sudo *', 'find /home -delete*',
-        'env rm -rf *',
-        'eval *', 'exec sudo *',
-    ],
-    'smart_policy': (
-        'Production shell policy. Guardian MUST follow:\n'
-        '1. DENY sudo.\n'
-        '2. DENY rm -rf except on scoped temp/build paths the agent explicitly names.\n'
-        '3. DENY piping remote scripts into a shell (curl | sh, wget | sh).\n'
-        '4. DENY force-push (git push --force*) and history rewrite (git reset --hard*, git clean -fd*).\n'
-        '5. DENY raw device writes (dd if=*), filesystem creation (mkfs*), and system power commands (shutdown*, reboot*).\n'
-        '6. DENY wholesale permission changes (chmod -R 777 *, chown -R *).\n'
-        '7. APPROVE read-only git (status/diff/log) and test/lint commands (pytest, npm test, npm run lint, ruff, cargo test, go test) without escalation.\n'
-        '8. ESCALATE anything touching /etc, /boot, /root, or global shell configs, and destructive deletions outside the working tree.\\n'
-        '9. RUN scripts/hardline-check.sh '<command>' before executing any command that is not already deny-listed; BLOCK if it exits 1.'
-    ),
-}
-cfg['security'] = {'redact_secrets': True, 'tirith_enabled': True}
-cfg['logging'] = {'level': 'INFO'}
-yaml.safe_dump(cfg, open(p, 'w'), sort_keys=False, default_flow_style=False)
+import os, sys, tempfile, yaml
+
+home = os.environ.get('HERMES_HOME') or os.path.expanduser('~/.hermes')
+p = os.path.join(home, 'config.yaml')
+if not os.path.isfile(p):
+    sys.exit('FATAL: %s not found — set HERMES_HOME or run hermes setup' % p)
+with open(p) as fh:
+    cfg = yaml.safe_load(fh) or {}
+if not isinstance(cfg, dict):
+    sys.exit('FATAL: config.yaml is not a mapping')
+
+DENY = [
+    # legacy 71 (R-02 baseline, unchanged)
+    'rm -rf /', 'rm -rf ~', 'sudo *',
+    'chmod -R 777 *', 'chown -R *',
+    'curl * | *sh', 'wget * | *sh',
+    'git push --force*', 'git reset --hard*', 'git clean -fd*',
+    'dd if=*', 'mkfs*', 'shutdown*', 'reboot*',
+    'git checkout -- .', 'git branch -D*', 'git rebase -i*',
+    'systemctl stop*', 'systemctl disable*', 'iptables -F*',
+    'docker system prune*', 'kubectl delete*',
+    'terraform destroy*', 'pulumi destroy*',
+    'ansible-playbook --check=false*', 'fdisk /dev*', 'parted /dev*',
+    'curl *|*sh', 'wget *|*sh',
+    'curl * | *python*', 'curl * | *node*', 'curl * | *ruby*', 'curl * | *perl*',
+    'wget * | *python*', 'wget * | *node*', 'wget * | *ruby*', 'wget * | *perl*',
+    '/usr/bin/sudo *', '/bin/sudo *',
+    'env sudo *', '/usr/bin/env sudo *',
+    'rm -rf /*', 'rm -rf ~/*',
+    'git push origin +*', 'git push +*',
+    'find / -delete*', 'find / -exec rm*',
+    'bash -c *', 'sh -c *', 'dash -c *', 'zsh -c *',
+    '/bin/bash -c *', '/bin/sh -c *',
+    'python -c *', 'python3 -c *', 'perl -e *', 'ruby -e *', 'node -e *',
+    '/bin/rm -rf *', '/usr/bin/rm -rf *',
+    'rm -r -f *', 'rm -f -r *',
+    '(sudo *', '(rm -rf *',
+    '/usr/bin/find / -delete*', '/bin/find / -delete*',
+    'find / -exec sudo *', 'find /home -delete*',
+    'env rm -rf *',
+    'eval *', 'exec sudo *',
+    # R4 additions (59): flag/path/wrapper/relative-path variants
+    'rm -fr *', 'rm -rf --no-preserve-root*', 'rm --recursive*',
+    'rm -rf .', 'rm -rf ./', 'rm -rf ..*', 'rm -fr ..*',
+    'doas *', 'pkexec *', 'runuser *', 'su -c *', 'su root*', 'su -*',
+    'command sudo *', 'env -i sudo *', 'nice sudo *', 'nohup sudo *',
+    'timeout * sudo *', 'xargs sudo *',
+    'poweroff*', 'halt*', 'init 0*', 'init 6*',
+    'systemctl poweroff*', 'systemctl reboot*', 'systemctl halt*',
+    'systemctl isolate*', 'telinit *',
+    '/sbin/shutdown*', '/sbin/reboot*', '/usr/sbin/shutdown*',
+    '/usr/sbin/reboot*', '/sbin/mkfs*',
+    '/usr/sbin/mkfs*', '/sbin/fdisk*', '/usr/sbin/fdisk*',
+    '/sbin/parted*', '/usr/sbin/parted*', 'dd of=*',
+    'git push -f*', 'git push --mirror*', 'git push --delete*',
+    'git push origin --delete*', 'git push origin :*',
+    'git restore .*', 'git checkout .*',
+    'git stash clear*', 'git update-ref -d*',
+    'find / -*delete*', 'find /home -*delete*',
+    'find / -*exec rm*', 'find / -*exec sudo*',
+    'at *', 'batch *', 'systemd-run *',
+    'crontab -r*', 'history -c*', 'shred *',
+    'chmod -R 000 *',
+]
+
+POLICY = '''Production shell policy. Guardian MUST follow:
+1. DENY sudo, doas, pkexec, runuser, and su in any position on a command line.
+2. DENY recursive rm entirely at the deterministic layer; use scripts/trash.sh for deletions. Any other scoped deletion requires explicit human confirmation.
+3. DENY piping remote scripts into a shell (curl | sh, wget | sh) and download-then-execute sequences (fetch to file, then run or chmod+x).
+4. DENY force-push (git push --force*, git push -f*, git push --mirror*) and history rewrite (git reset --hard*, git clean -fd*).
+5. DENY raw device writes (dd if=*, dd of=*), filesystem creation (mkfs*), partitioning tools, and system power commands (shutdown*, reboot*, poweroff*, halt*).
+6. DENY wholesale permission changes (chmod -R 777 *, chmod -R 000 *, chown -R *).
+7. APPROVE read-only git (status/diff/log) and lint/format commands without escalation. Test runners (pytest, npm test, cargo test, go test) are APPROVED only inside scripts/run-sandbox.sh or scripts/bwrap-shell.sh; unsandboxed test execution ESCALATES because package hooks and scripts run arbitrary code.
+8. ESCALATE anything touching /etc, /boot, /root, /mnt, or global shell configs, and destructive deletions outside the working tree.
+9. RUN "$HOME/src/hermes-config/scripts/hardline-check.sh" '<command>' before executing any command that is not already deny-listed; BLOCK if it exits non-zero. If the scanner cannot be executed, treat the command as BLOCKED.'''
+
+ap = cfg.setdefault('approvals', {})
+ap['mode'] = 'smart'
+ap['cron_mode'] = 'deny'
+ap['deny'] = DENY
+ap['smart_policy'] = POLICY
+
+sec = cfg.setdefault('security', {})          # MERGE, never replace (H-2)
+sec['redact_secrets'] = True
+sec['tirith_enabled'] = True
+log = cfg.setdefault('logging', {})
+log.setdefault('level', 'INFO')
+
+fd, tmp = tempfile.mkstemp(dir=home, prefix='.config.yaml.', suffix='.tmp')
+with os.fdopen(fd, 'w') as fh:
+    yaml.safe_dump(cfg, fh, sort_keys=False, default_flow_style=False)
+os.replace(tmp, p)                             # atomic swap
+print('OK: %s — %d deny patterns' % (p, len(DENY)))
 PY
 
 hermes config get approvals.mode          # -> smart
-hermes config get security.redact_secrets # -> true
 ```
+
 
 Restore `~/.agentignore` (contents in [§ Security Model](#security-model)):
 
@@ -555,15 +607,26 @@ docker build -t hermes-sandbox \
 # Bubblewrap restricted shell:
 sudo apt install -y bubblewrap
 
-# Phase 6b — WSL snapshot the audit checks (full procedure in § Backup and Disaster Recovery):
+# WSL snapshot the audit checks (full procedure in § Backup and Disaster Recovery):
 #   wsl --shutdown
 #   wsl --export Ubuntu C:\Users\Nika\ubuntu-backup-<date>.tar
 
 # Document / log analysis tooling (turns the 2 INFO notes into PASS):
-sudo apt install -y pandoc poppler-utils python3-docx python3-openpyxl csvkit duckdb lnav
+sudo apt install -y pandoc poppler-utils python3-docx python3-openpyxl csvkit duckdb lnav libreoffice-writer-nogui
 
 # Optional hardening: trash-cli, commit signing key, secret scanners (gitleaks, trufflehog)
 sudo apt install -y trash-cli
+```
+
+### Phase 6b — Secret-scan restore (pre-commit + gitleaks)
+
+```bash
+sudo apt install -y python3-yaml pipx trash-cli
+pipx ensurepath
+pipx install pre-commit
+cd ~/src/hermes-config
+pre-commit install
+pre-commit run gitleaks --all-files    # baseline scan of restored tree
 ```
 
 ### Phase 7 — Verify: the 100% GREEN audit
@@ -585,12 +648,16 @@ readiness: 43 pass, 0 fail, 11 info     # exit code 0  (any FAIL -> exit code 1)
 > pandoc/lnav/duckdb are the two optional tool groups listed in Phase 6.
 > **0 FAIL is the "fully green" definition** — the script exits 0 iff FAIL=0.
 
-### Publish this repo (one-time, so recovery works from anywhere)
+### Publish this repo (MANDATORY — no remote = 1-Click Recovery cannot clone)
+
+> Do this **before** Phase 4: the clone in Phase 4 depends on the repo existing
+> on GitHub. `git ls-remote` success is the required evidence.
 
 ```bash
 cd ~/src/hermes-config
 git remote add origin git@github.com:<your-gh-user>/hermes-config.git
 git push -u origin main
+git ls-remote origin >/dev/null && echo "remote verified"   # required evidence
 # or with GitHub CLI:
 gh repo create hermes-config --public --source=. --remote=origin --push
 ```
@@ -732,6 +799,14 @@ apt-get 404 during disaster recovery. Verified rebuilt 2026-08-05: git 2.53.0,
 python3 3.14.4, node v22.22.1, npm 9.2.0, jq 1.8.1, rg 15.1.0.
 
 Use it for: dependency installs, untrusted code, experiments. Never for credentials.
+
+### Supply-chain policy (pinned third-party plugins)
+
+Third-party agent plugins are pinned. `hermes-lcm` is installed at an explicit
+commit (`git checkout <sha>` after clone — never rolling `git pull` in
+production); upgrades are a deliberate, reviewed action. RTK is installed via
+its checksum-verified installer and version-checked (`rtk --version ≥ 0.44.2`)
+before enabling `rtk-rewrite`.
 
 ### Bubblewrap details
 
