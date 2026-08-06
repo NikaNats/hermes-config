@@ -25,3 +25,13 @@ repos:
       - id: check-merge-conflict
       - id: end-of-file-fixer
       - id: trailing-whitespace
+  # R4: hardline scanner regression corpus — BLOCK/ALLOW expectations must
+  # hold on every commit (scripts/hardline-corpus-test.sh, 40 cases).
+  - repo: local
+    hooks:
+      - id: hardline-corpus
+        name: hardline scanner regression corpus
+        entry: bash scripts/hardline-corpus-test.sh
+        language: system
+        pass_filenames: false
+        always_run: true
