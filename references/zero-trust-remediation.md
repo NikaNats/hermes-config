@@ -149,9 +149,14 @@ Follow-up required: Test 4 (sudoers apply — user action, see §7).
 - **R-14**: `setup-logrotate.sh` temp moved out of /tmp to `$HOME`, stanza path
   quoted, checksum printed (guide's EXIT-trap omitted — it would delete the file the
   install command references).
-- **R-20/R-23**: SOUL.md carries stable `audit:` markers (validation-required,
-  no-secrets, untrusted-input) instead of prose greps, plus an 11th principle
-  bounding unbounded operations.
+- **R-20 (RETRACTED 2026-08-06)**: SOUL.md once carried stable `audit:` HTML
+  markers (validation-required, no-secrets, untrusted-input) as grep anchors.
+  RETRACTED: hidden HTML comments match Hermes' prompt-injection scanner
+  ("Hidden HTML comments"), which blocks the ENTIRE SOUL.md -> silent fallback
+  to the built-in default identity with the safety charter lost. The audit now
+  greps natural prose anchors from `references/soul-safety-manifest.yaml`
+  (audit-only sidecar; never prompt-loaded) — see R-24 in readiness-check.sh.
+- **R-23**: SOUL.md carries an 11th principle bounding unbounded operations.
 - **R-21/R-22**: `new-report.sh` rejects degenerate names (`.`, `..`, dotfiles);
   `hermes-one` neutralizes the script-level IFS with `local IFS=' '`.
 - Verified: readiness **43 pass, 0 fail, 11 info, exit 0**; trash traversal FATAL;

@@ -1,0 +1,23 @@
+# soul-safety-manifest.yaml — AUDIT-ONLY sidecar (never prompt-loaded).
+#
+# Machine-checkable guarantees that must hold in SOUL.md, expressed as natural
+# prose anchors. readiness-check.sh reads THIS file and greps SOUL.md for each
+# anchor. Keep anchors as plain prose phrases that already exist in SOUL.md —
+# do NOT add HTML comments or hidden markers to SOUL.md itself: Hermes scans
+# SOUL.md for prompt-injection patterns (including "Hidden HTML comments") and
+# blocks the ENTIRE file when one is found, silently falling back to the
+# built-in default identity (safety charter lost). See:
+#   references/prompt-injection-defense.md
+#   https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files
+version: 1
+guarantees:
+  - id: no-secrets
+    anchor: "Never expose secrets"
+  - id: untrusted-input
+    anchor: "untrusted data"
+  - id: destructive-confirmation
+    anchor: "destructive or irreversible actions"
+  - id: validation-required
+    anchor: "validation commands"
+  - id: precedence
+    anchor: "take precedence"

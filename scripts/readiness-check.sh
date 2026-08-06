@@ -81,6 +81,16 @@ git -C "$REPO" ls-files 2>/dev/null | grep -q '^prompts/' \
 [ -L "$HERMES_HOME/SOUL.md" ] \
   && [ "$(readlink -f "$HERMES_HOME/SOUL.md")" = "$(readlink -f "$REPO/SOUL.md")" ] \
   && ok "SOUL.md symlink live -> repo" || bad "SOUL.md symlink live -> repo"
+# R-24: symlink resolution is NOT enough. Hermes scans SOUL.md for prompt
+# injection (incl. hidden HTML comments) and blocks the WHOLE file when one
+# matches -> silent fallback to the built-in default identity, safety charter
+# lost while the disk audit still looks green. Verify liveness + scanner-safety.
+SOUL_LIVE="$(readlink -f "$HERMES_HOME/SOUL.md" 2>/dev/null)"
+if [ -s "$SOUL_LIVE" ] && ! grep -q -- '<!--' "$SOUL_LIVE"; then
+  ok "SOUL.md live, non-empty, scanner-safe (no HTML comments)"
+else
+  bad "SOUL.md live, non-empty, scanner-safe (empty or contains HTML comments)"
+fi
 [ -L "$HERMES_HOME/prompts" ] \
   && [ "$(readlink -f "$HERMES_HOME/prompts")" = "$(readlink -f "$REPO/prompts")" ] \
   && ok "prompts/ symlink live -> repo" || bad "prompts/ symlink live -> repo"
@@ -205,9 +215,9 @@ for t in node npm uv; do has "$t" || LINT="$LINT $t"; done
   || note "linters/formatters missing:$LINT (cargo/go also absent)"
 note "test runner: per-project (no global runner; use project tooling)"
 
-grep -q 'audit:validation-required' "$REPO/SOUL.md" \
-  && ok "validation required by SOUL.md (marker audit:validation-required)" \
-  || bad "validation required by SOUL.md (marker audit:validation-required missing)"
+grep -q 'validation commands' "$REPO/SOUL.md" \
+  && ok "validation required by SOUL.md (principle 10)" \
+  || bad "validation required by SOUL.md (anchor 'validation commands' missing)"
 grep -qi 'branch' "$REPO/references/cicd-guardrails.md" \
   && ok "branch/worktree policy defined (cicd-guardrails.md)" || bad "branch/worktree policy defined"
 [ -f "$REPO/references/backup-recovery.md" ] \
@@ -237,11 +247,22 @@ case "$SAFETY" in
   ok) ok "critical deny patterns present (structural YAML check)" ;;
   *)  bad "critical deny patterns present ($SAFETY)" ;;
 esac
-grep -q 'audit:no-secrets' "$REPO/SOUL.md" && ok "no secret access (SOUL.md marker audit:no-secrets)" \
-  || bad "no secret access (SOUL.md marker missing)"
-grep -q 'audit:untrusted-input' "$REPO/SOUL.md" \
-  && ok "external content treated as untrusted (SOUL.md marker audit:untrusted-input)" \
-  || bad "external content treated as untrusted (SOUL.md marker missing)"
+# R-24: SOUL.md guarantees are audited against natural prose anchors from
+# references/soul-safety-manifest.yaml (audit-only sidecar — never prompt-
+# loaded). HTML markers were retracted: they tripped Hermes' injection scanner
+# and silently dropped the whole safety charter.
+MISSING_ANCHORS=""
+if [ -f "$REPO/references/soul-safety-manifest.yaml" ]; then
+  while IFS= read -r anchor; do
+    [ -n "$anchor" ] || continue
+    grep -qF -- "$anchor" "$REPO/SOUL.md" || MISSING_ANCHORS="$MISSING_ANCHORS|$anchor"
+  done < <(grep -oE 'anchor: *"[^"]+"' "$REPO/references/soul-safety-manifest.yaml" | cut -d'"' -f2)
+  [ -z "$MISSING_ANCHORS" ] \
+    && ok "SOUL.md safety guarantees present (all manifest anchors)" \
+    || bad "SOUL.md safety guarantees present (missing:$MISSING_ANCHORS)"
+else
+  bad "SOUL.md safety guarantees present (references/soul-safety-manifest.yaml missing)"
+fi
 [ -f "$REPO/references/prompt-injection-defense.md" ] \
   && ok "prompt-injection defenses documented" || bad "prompt-injection defenses documented"
 [ -f "$REPO/scripts/hardline-check.sh" ] && [ -x "$REPO/scripts/hardline-check.sh" ] \
