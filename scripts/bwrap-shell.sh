@@ -4,6 +4,8 @@
 #  - PWD bound READ-ONLY by default; SANDBOX_RW=1 opts in (Docker parity) — C-2
 #  - Optional size-capped tmpfs via BWRAP_TMPFS_SIZE (probed; warns+skips if
 #    this bwrap build rejects --size) — L-3
+#  - Expanded credential masks (M-1) — R-15
+#  - Caller env purged inside sandbox (--clearenv + allowlist) — R-15
 set -Eeuo pipefail
 IFS=$'\n\t'
 die() { echo "FATAL: $*" >&2; exit 1; }
@@ -26,8 +28,17 @@ for r in "${ALLOW_ROOTS[@]}"; do case "$PWD_REAL" in "$r"|"$r"/*) ok=1;; esac; d
 [ -n "$ok" ] || die "PWD '$PWD_REAL' outside sandbox allowlist (${ALLOW_ROOTS[*]})"
 
 # ── Masks (after the PWD bind — last mount wins) ───────────────────────
-DIRS=("$HOME/.ssh" "$HOME/.aws" "$HOME/.azure" "$HOME/.config/gcloud" "$HOME/.gnupg" "$HOME/.kube" "$HOME/.docker" "$HOME/.config/hermes")
-FILE_MASKS=("$HOME/.netrc" "$HOME/.bash_history" "$HOME/.zsh_history" "$HOME/.python_history" "$HOME/.config/hermes/.env" "$HOME/.config/hermes/lcm.db")
+DIRS=("$HOME/.ssh" "$HOME/.aws" "$HOME/.azure" "$HOME/.config/gcloud" "$HOME/.gnupg" "$HOME/.kube" "$HOME/.docker" "$HOME/.config/hermes" "$HOME/.config/gh")
+FILE_MASKS=(
+  "$HOME/.netrc" "$HOME/.bash_history" "$HOME/.zsh_history" "$HOME/.python_history"
+  "$HOME/.config/hermes/.env" "$HOME/.config/hermes/lcm.db"
+  # M-1 additions (credential stores + remaining histories)
+  "$HOME/.npmrc" "$HOME/.pypirc" "$HOME/.git-credentials"
+  "$HOME/.cargo/credentials" "$HOME/.cargo/credentials.toml"
+  "$HOME/.m2/settings.xml" "$HOME/.gradle/gradle.properties"
+  "$HOME/.config/gh/hosts.yml" "$HOME/.node_repl_history"
+  "$HOME/.mysql_history" "$HOME/.psql_history"
+)
 MASK_ARGS=()
 for f in "${FILE_MASKS[@]}"; do [ -f "$f" ] && MASK_ARGS+=(--bind /dev/null "$f"); done
 for d in "${DIRS[@]}";      do [ -d "$d" ] && MASK_ARGS+=(--tmpfs "$d"); done
@@ -59,6 +70,14 @@ if ! bwrap --unshare-user --die-with-parent --ro-bind / / --proc /proc --dev /de
   die "bwrap --unshare-user unavailable (kernel.unprivileged_userns_clone=0?)"
 fi
 
+# ── Env purging (R-15 / M-1 adjacent): --clearenv wipes the caller's env
+#    inside the sandbox (credentials often live in exported vars); only an
+#    explicit allowlist is restored. bwrap applies --setenv after --clearenv.
+SETENV_ARGS=(--clearenv --setenv HOME "$HOME" --setenv PATH "/usr/local/bin:/usr/bin:/bin")
+for v in TERM USER LOGNAME LANG LC_ALL HERMES_HOME; do
+  [ -n "${!v:-}" ] && SETENV_ARGS+=(--setenv "$v" "${!v}")
+done
+
 exec bwrap \
   --ro-bind / / \
   "${PWD_BIND[@]}" \
@@ -79,4 +98,5 @@ exec bwrap \
   "${NET_ARGS[@]}" \
   --die-with-parent \
   --chdir "$PWD_REAL" \
+  "${SETENV_ARGS[@]}" \
   bash "$@"

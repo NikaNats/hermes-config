@@ -319,13 +319,16 @@ Set these keys (dummy/local values — no real credentials):
 # ~/src/firecrawl/.env  — append at the END of the file
 USE_DB_AUTHENTICATION=false          # no auth DB; TEST_API_KEY is the API key
 TEST_API_KEY=fc-local-secret-key-2026
-PORT=3002
+PORT=127.0.0.1:3002                  # R-14: loopback ONLY — never 0.0.0.0
 ```
 
 > ⚠️ `apps/api/.env.example` already ships `PORT=3002` and an **empty**
 > `TEST_API_KEY=` placeholder earlier in the file. Append the real values at
 > the end — docker compose dotenv semantics use the **last** occurrence
 > (verified: `docker compose exec api printenv TEST_API_KEY` → 24 chars).
+> If `PORT=3002` (plain) appears anywhere later than the loopback form, the
+> API binds `0.0.0.0` — R-14 regression. `readiness-check.sh` fails unless the
+> last `PORT=` line is `127.0.0.1:3002`.
 
 ### 7.5 Launch the stack
 
@@ -338,7 +341,7 @@ First run pulls the images (needs the § 7.2 DNS fix) and starts 6 services:
 
 | Service | Role | Exposed |
 | :--- | :--- | :--- |
-| `firecrawl-api-1` | Firecrawl API + worker | `0.0.0.0:3002->3002/tcp` |
+| `firecrawl-api-1` | Firecrawl API + worker | `127.0.0.1:3002->3002/tcp` |
 | `firecrawl-playwright-service-1` | headless Chromium scraper backend | internal |
 | `firecrawl-redis-1` | queue / cache | internal |
 | `firecrawl-rabbitmq-1` | job broker (healthy) | internal |

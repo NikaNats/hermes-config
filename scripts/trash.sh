@@ -27,8 +27,10 @@ for src in "$@"; do
   for r in "${ALLOWED_ROOTS[@]}"; do case "$canon" in "$r"|"$r"/*) ok=1;; esac; done
   [ -n "$ok" ] || die "refusing to trash '$src' (resolves to '$canon', outside allowed trees: ${ALLOWED_ROOTS[*]})"
 
-  # Size guard (du -sb works on dirs and files alike)
-  size="$(du -sb -- "$src" 2>/dev/null | cut -f1)"; size="${size:-0}"
+  # Size guard (du -sb works on dirs and files alike). Timeout + fail-closed:
+  # if the tree cannot be sized in 30s, refuse rather than guess.
+  size="$(timeout 30 du -sb -- "$src" 2>/dev/null | cut -f1)" || die "cannot size '$src' (du failed or timed out)"
+  size="${size:-0}"
   if [ "$size" -gt "$MAX_BYTES" ] && [ "${TRASH_FORCE:-0}" != "1" ]; then
     die "refusing to trash '$src': $size bytes exceeds TRASH_MAX_BYTES=$MAX_BYTES (override: TRASH_FORCE=1)"
   fi

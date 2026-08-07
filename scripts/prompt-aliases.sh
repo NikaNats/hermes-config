@@ -3,7 +3,7 @@
 # Source this file from ~/.bashrc:
 #   [ -f ~/src/hermes-config/scripts/prompt-aliases.sh ] && source ~/src/hermes-config/scripts/prompt-aliases.sh
 #
-# How it works (verified against Hermes v0.19.1 source, 2026-08-03):
+# How it works (verified against Hermes v0.20.0 source, 2026-08-07):
 #   - There is NO `hermes --system-prompt` CLI flag. The supported mechanism is
 #     the HERMES_EPHEMERAL_SYSTEM_PROMPT env var, read at session init
 #     (cli.py: HERMES_EPHEMERAL_SYSTEM_PROMPT -> agent.system_prompt config).

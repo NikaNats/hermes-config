@@ -6,7 +6,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-NAME="$(basename "${1:-report}" | tr -cd '[:alnum:]_.-')"
+NAME="$(basename -- "${1:-report}" | tr -cd '[:alnum:]_.-')"
 [ -z "$NAME" ] && NAME="report"
 # R-21: reject degenerate names (".", "..", hidden dotfiles) -> fall back
 case "$NAME" in

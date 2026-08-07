@@ -634,25 +634,16 @@
         "clone",
         "clone3",
         "fanotify_init",
-        "fsconfig",
-        "fsmount",
-        "fsopen",
-        "fspick",
         "lookup_dcookie",
         "lsm_get_self_attr",
         "lsm_list_modules",
         "lsm_set_self_attr",
-        "mount_setattr",
-        "move_mount",
-        "open_tree",
         "perf_event_open",
         "quotactl",
         "quotactl_fd",
         "setdomainname",
         "sethostname",
-        "setns",
-        "syslog",
-        "unshare"
+        "syslog"
       ],
       "action": "SCMP_ACT_ALLOW",
       "includes": {
@@ -863,6 +854,20 @@
         "ptrace",
         "umount",
         "umount2"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "names": [
+        "fsconfig",
+        "fsmount",
+        "fsopen",
+        "fspick",
+        "mount_setattr",
+        "move_mount",
+        "open_tree",
+        "setns",
+        "unshare"
       ],
       "action": "SCMP_ACT_ERRNO"
     }

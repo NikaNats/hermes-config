@@ -35,6 +35,13 @@ Blocked or explicit-confirmation commands. Enforcement split:
     env rm -rf *
     eval *              exec sudo *
 
+> **This table documents the R-02 baseline (71) plus the R-04 additions below.**
+> The **live, canonical list is 164 patterns** (2026-08-07-r15) — version-controlled
+> at `references/deny-patterns.json` and restored by `scripts/update-config-deny.py`.
+> It adds the R-14 docker-escape rows and the R-15 rows (interpreter absolute
+> paths, service control, docker escalation). The script is the single source
+> of truth; this file describes the policy family.
+
 Notes:
 - `git push --force-with-lease` is covered by the `git push --force*` pattern.
 - `rmdir /s` (Windows cmd) is irrelevant to WSL bash and is not matched.

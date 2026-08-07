@@ -1,0 +1,8 @@
+name: hardline-gate
+version: "1.0.0"
+description: Deterministic pre-execution command scanner gate (fail-closed hardline enforcement).
+author: Hermes Agent / NikaNats
+hooks:
+  - pre_tool_call
+provides_hooks:
+  - pre_tool_call

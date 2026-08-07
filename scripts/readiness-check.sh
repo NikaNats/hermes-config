@@ -138,8 +138,8 @@ except Exception:
     # Catch-all: yaml.YAMLError, PermissionError, etc. -> no false PASS
     print(0)
 " 2>/dev/null || echo 0)
-[ "$DCNT" -ge 130 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
-  || bad "destructive commands blocked (deny list: $DCNT patterns, expected >= 130)"
+[ "$DCNT" -ge 137 ] && ok "destructive commands blocked (deny list: $DCNT patterns)" \
+  || bad "destructive commands blocked (deny list: $DCNT patterns, expected >= 137)"
 
 note "filesystem ACLs: not natively supported (OS perms + .agentignore instead)"
 [ -f "$HOME/.agentignore" ] && [ -f "$REPO/.gitignore" ] \
@@ -190,6 +190,24 @@ grep -qE '^[[:space:]]*engine:[[:space:]]*lcm[[:space:]]*$' "$CFG" && ok "contex
   || note "context.engine=lcm not set (hermes-lcm not active)"
 [ -f "$HERMES_HOME/lcm.db" ] && ok "lcm.db present" \
   || note "lcm.db not present (hermes-lcm not active)"
+# R-15 (C-1): deterministic hardline gate must be installed AND enabled — the
+# scanner is only deterministic when every terminal command passes through it.
+if [ -d "$HERMES_HOME/plugins/hardline-gate" ]; then
+  ok "hardline-gate plugin installed ($HERMES_HOME/plugins/hardline-gate)"
+else
+  bad "hardline-gate plugin installed (install: mkdir -p \$HERMES_HOME/plugins/hardline-gate && cp -r plugins/hardline-gate/. \$HERMES_HOME/plugins/hardline-gate/)"
+fi
+HG_ON=$(CFG_PATH="$CFG" python3 -c "
+import os, yaml
+try:
+    cfg = yaml.safe_load(open(os.environ['CFG_PATH'])) or {}
+    en = ((cfg.get('plugins') or {}).get('enabled')) or []
+    print('yes' if isinstance(en, list) and 'hardline-gate' in en else 'no')
+except Exception:
+    print('no')
+" 2>/dev/null || echo no)
+[ "$HG_ON" = "yes" ] && ok "hardline-gate enabled (plugins.enabled contains hardline-gate)" \
+  || bad "hardline-gate enabled (plugins.enabled missing hardline-gate — deterministic gate inactive)"
 
 # ── LCM redaction gate ──────────────────────────────────────────────
 if grep -qE '^[[:space:]]*engine:[[:space:]]*lcm[[:space:]]*$' "$CFG" 2>/dev/null; then
@@ -251,7 +269,9 @@ except Exception:
     print('missing'); sys.exit(0)
 need = {'sudo *', 'rm -rf /', 'rm -rf ~', 'git push --force*', 'git push -f*',
         '/usr/bin/sudo *', 'env sudo *', 'rm -rf --no-preserve-root*',
-        'rm --recursive*', 'poweroff*', 'doas *', 'pkexec *', 'git push --mirror*'}
+        'rm --recursive*', 'poweroff*', 'doas *', 'pkexec *', 'git push --mirror*',
+        'docker run * -v /*', 'docker run * --mount type=bind*',
+        'docker create * --volume /*'}
 print('ok' if need.issubset(deny) else 'missing:' + ','.join(sorted(need - deny)))
 " 2>/dev/null || echo missing)
 case "$SAFETY" in
@@ -305,6 +325,28 @@ if bwrap --unshare-user --die-with-parent --ro-bind / / --proc /proc --dev /dev 
   ok "user namespaces available (bwrap --unshare-user)"
 else
   bad "user namespaces available (check kernel.unprivileged_userns_clone)"
+fi
+
+# R-15 (H-3): Firecrawl must bind loopback, never 0.0.0.0 (recovery docs used to
+# instruct PORT=3002 which re-exposes the scraping API on all interfaces).
+FC_ENV="$HOME/src/firecrawl/.env"
+if [ -f "$FC_ENV" ]; then
+  if grep -Eq '^PORT=127\.0\.0\.1:3002([[:space:]]|$)' "$FC_ENV"; then
+    ok "Firecrawl loopback binding (PORT=127.0.0.1:3002 in $FC_ENV)"
+  else
+    bad "Firecrawl loopback binding (PORT is not 127.0.0.1:3002 in $FC_ENV — R-14 regression)"
+  fi
+else
+  note "Firecrawl not deployed (~/src/firecrawl/.env absent) — binding check skipped"
+fi
+# M-8: local-mode SSRF exemption has no compensating guard. On non-WSL hosts
+# adjacent to cloud/LAN services, TERMINAL_ENV=local is dangerous.
+if [ -n "${TERMINAL_ENV:-}" ] && [ "$TERMINAL_ENV" != "local" ]; then
+  ok "TERMINAL_ENV set to non-local (SSRF gate active in browser tool)"
+elif [ -n "${TERMINAL_ENV:-}" ] && [ "$TERMINAL_ENV" = "local" ]; then
+  note "TERMINAL_ENV=local — browser SSRF gate skipped by design (documented); verify host isolation"
+else
+  note "TERMINAL_ENV unset — default local mode skips browser SSRF gate; verify host isolation"
 fi
 
 BACKUP_FOUND=""

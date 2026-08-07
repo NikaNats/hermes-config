@@ -24,5 +24,5 @@
     git push -u origin ci/improve-tests
     gh pr create --fill
 
-No remote is configured for ~/src/hermes-config yet; this workflow applies
-to the user's projects once a remote exists.
+A remote IS configured for ~/src/hermes-config (origin -> github.com/NikaNats/hermes-config);
+this workflow applies to the config repo itself and to the user's other projects.

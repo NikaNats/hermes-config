@@ -8,9 +8,9 @@ Re-run that script any time before letting Hermes do real work — the doc
 below is a snapshot, the script is the live check. Legend: OK = ready,
 ACTION = needs you, NOTE = documented gap / per-project.
 
-> **Snapshot date:** 2026-08-06. This document is a point-in-time snapshot.
+> **Snapshot date:** 2026-08-07 (R-15 refresh). This document is a point-in-time snapshot.
 > The script (`scripts/readiness-check.sh`) is the authoritative source.
-> Current live result: **43 pass, 0 fail, 11 info** (script exits 0 iff FAIL=0).
+> Current live result: **56 pass, 0 fail, 7 info** (script exits 0 iff FAIL=0).
 
 ## WSL Environment
 
@@ -32,7 +32,7 @@ ACTION = needs you, NOTE = documented gap / per-project.
 | Prompts modular & versioned | OK | prompts/: 6 personas (coding/review/ops/research/automation/production) |
 | Production profile deterministic | NOTE | temperature is model/provider-level; behavior block realized via prompts/production.md |
 | Tool permissions explicitly configured | OK | approvals.mode=smart, cron_mode=deny, tirith_enabled=true |
-| Destructive commands require confirmation | OK | approvals.deny: 71 patterns (>= 71 required) |
+| Destructive commands require confirmation | OK | approvals.deny: 164 patterns (>= 137 required; canonical list in references/deny-patterns.json) |
 | Filesystem allow/deny lists | NOTE | not natively supported; closest: OS user perms, ~/agent layout, .agentignore, redact_secrets |
 | Secret directories excluded | OK | ~/.agentignore content-checked (R-10) + repo .gitignore + security.redact_secrets=true |
 | Logs and audit trails enabled | OK | ~/.config/hermes/logs/ (agent.log, errors.log) + session store |
@@ -75,7 +75,7 @@ ACTION = needs you, NOTE = documented gap / per-project.
 | Research mode: citation + uncertainty | OK | references/research-workflow.md |
 | System admin mode: read-only diagnostics | OK | references/sysadmin-readonly.md + narrow sudoers example |
 
-## To reach fully green (current: 43 pass, 0 fail, 11 info — script exits 0)
+## To reach fully green (current: 56 pass, 0 fail, 7 info — script exits 0)
 
 1. Optional: sudo apt update && sudo apt upgrade (10 pending — INFO, not FAIL)
 2. Optional: GPG key for commit signing; trash-cli; pandoc/poppler/duckdb/lnav (2 INFO notes)

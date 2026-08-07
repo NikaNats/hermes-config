@@ -13,7 +13,7 @@ WSL does not overwrite in place — restore into a new distro name:
     cd ~/src/hermes-config
     git add .
     git commit -m "Backup Hermes config before major change"
-    git push          # only once a remote exists (none configured yet)
+    git push          # remote IS configured (origin -> github.com/NikaNats/hermes-config)
 
 ## Git as the primary safety net (before agent edits)
 

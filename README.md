@@ -9,7 +9,7 @@
 ![Platform: WSL2 / Ubuntu 26.04](https://img.shields.io/badge/platform-WSL2%20%2F%20Ubuntu%2026.04-brightgreen)
 ![Hermes Agent v0.20.0](https://img.shields.io/badge/Hermes%20Agent-v0.20.0-blueviolet)
 ![Model: deepseek-v4-flash-free](https://img.shields.io/badge/model-deepseek--v4--flash--free-informational)
-![Audit: 53 PASS / 0 FAIL / 6 INFO](https://img.shields.io/badge/audit-53%20PASS%20%2F%200%20FAIL%20%2F%206%20INFO-green)
+![Audit: 56 PASS / 0 FAIL / 7 INFO](https://img.shields.io/badge/audit-56%20PASS%20%2F%200%20FAIL%20%2F%207%20INFO-green)
 
 ---
 
@@ -20,6 +20,7 @@
 - [📋 1-Click Recovery / Installation Guide](#recovery)
 - [🎭 System Prompts & Personas Architecture](#personas)
 - [🛠️ Tools and Sandboxing](#tools)
+- [🧠 Matt Pocock Engineering & Productivity Skills](#mattpocock-skills)
 - [📊 Automated Audit Script](#audit)
 - [💾 Backup and Disaster Recovery](#backup)
 - [References Index](#references)
@@ -64,7 +65,7 @@ if the machine is lost, the whole system can be rebuilt and re-verified with the
                     │  │  SOUL.md ──symlink──► hermes-config      │  │
                     │  │  prompts/ ──symlink─► hermes-config      │  │
                     │  │  config.yaml: approvals.mode=smart       │  │
-                    │  │              approvals.deny: 137 patterns │  │
+                    │  │              approvals.deny: 164 patterns │  │
                     │  │              security.redact_secrets=true│  │
                     │  │  model: opencode-zen / deepseek-v4       │  │
                     │  └──────────────────────────────────────────┘  │
@@ -119,9 +120,15 @@ hermes-config/
 │   ├── preflight-checklist.md  #   Spec 6.3 read-only pre-flight before edits
 │   └── readiness-checklist.md  #   Spec 7 readiness checklist (snapshot)
 ├── sandbox/
-│   └── Dockerfile              # hermes-sandbox image (ubuntu:26.04, pinned toolchains)
+│   ├── Dockerfile              # hermes-sandbox image (ubuntu:26.04, pinned toolchains)
+│   └── hermes-seccomp.json     # hardened seccomp profile (mount-API family ERRNO'd, R-15)
+├── plugins/
+│   └── hardline-gate/          # deterministic pre_tool_call scanner gate (C-1, R-15)
+│       ├── plugin.yaml         #   manifest (hooks: pre_tool_call)
+│       └── __init__.py         #   fail-closed bridge to scripts/hardline-check.sh
 └── scripts/
     ├── assemble-prompt.sh      # Concatenate SOUL.md + persona -> active prompt
+    ├── update-config-deny.py   # Canonical approvals.deny restorer (R-15, Phase 5)
     ├── run-sandbox.sh          # Docker sandbox runner (resource/network/pids limits)
     ├── bwrap-shell.sh          # Bubblewrap restricted shell (user-ns, masked /proc /sys)
     ├── new-report.sh           # Dated report artifact creator
@@ -147,7 +154,7 @@ checked artifact in this repo or on the OS (`references/safety-model.md`).
 | # | Layer | Implementation |
 |---|---|---|
 | 1 | Prompt rules | `SOUL.md` principles + Safety & Boundaries |
-| 2 | Hermes config permissions | `config.yaml` `approvals.deny` — **deterministic block** (137 patterns) |
+| 2 | Hermes config permissions | `config.yaml` `approvals.deny` — **deterministic block** (164 patterns) |
 | 3 | OS user permissions | non-root user `nika` (uid 1000); **no passwordless sudo** |
 | 4 | Filesystem boundaries | `~/agent/{reports,artifacts,downloads,workspaces}` + repo tree |
 | 5 | Command policy | `references/approval-matrix.md` + `scripts/hardline-check.sh` (shell-layer scanner) |
@@ -166,7 +173,7 @@ enforced by Hermes at the tool layer — a matching command cannot run. `smart_p
 `scripts/hardline-check.sh` (R-02) closes the bypasses prefix globs cannot see
 (pipe-to-shell, base64-to-shell, remote-fetch substitution, eval/exec of fetched content).
 
-### approvals.deny — 137 forbidden command patterns
+### approvals.deny — 164 forbidden command patterns
 
 Enforced by Hermes at the tool layer: the agent **cannot run** these at all
 (verified in `~/.config/hermes/config.yaml`).
@@ -261,6 +268,17 @@ patterns (rows 131–137): `docker run * -v /*`, `docker run * -v=/*`,
 `docker run * --volume /*`, `docker run * --mount type=bind*`, and the
 `docker create *` equivalents — closing the `-v /:/host` host-root mount
 vector at the approvals layer (hardline rule 13 covers it at the scanner).
+The R-15 audit round (2026-08-07) added 27 more (rows 138–164): the
+`/usr/bin/*` interpreter family (`/usr/bin/bash -c *`, `/usr/bin/python3 -c *`,
+`/usr/bin/perl -e *`, `/usr/bin/node -e *`, …), `env`/`busybox`/versioned
+variants (`env bash -c *`, `busybox sh -c *`, `python3.* -c *`, `node[0-9]* -e *`,
+`node --eval*`), service-lifecycle controls (`systemctl restart|start|kill*`,
+`service * stop|restart|kill`), and docker escalation (`docker run *
+--privileged*`, `--cap-add*`, `--security-opt*`, `--pid=host*`,
+`--network=host*`, `--net=host*`, `docker compose -f *`, `docker cp *`).
+**The canonical list is version-controlled at `references/deny-patterns.json`
+and restored by `scripts/update-config-deny.py`** (Phase 5); `readiness-check.sh`
+fails below **137** patterns and asserts the docker rows structurally.
 
 Notes (from `references/destructive-commands.md`):
 
@@ -286,15 +304,15 @@ Current value in `config.yaml`:
 
 ```text
 Production shell policy. Guardian MUST follow:
-1. DENY sudo.
-2. DENY rm -rf except on scoped temp/build paths the agent explicitly names.
-3. DENY piping remote scripts into a shell (curl | sh, wget | sh).
-4. DENY force-push (git push --force*) and history rewrite (git reset --hard*, git clean -fd*).
-5. DENY raw device writes (dd if=*), filesystem creation (mkfs*), and system power commands (shutdown*, reboot*).
-6. DENY wholesale permission changes (chmod -R 777 *, chown -R *).
-7. APPROVE read-only git (status/diff/log) and test/lint commands (pytest, npm test, npm run lint, ruff, cargo test, go test) without escalation.
-8. ESCALATE anything touching /etc, /boot, /root, or global shell configs, and destructive deletions outside the working tree.
-9. RUN scripts/hardline-check.sh '<command>' before executing any command that is not already deny-listed; BLOCK if it exits 1.
+1. DENY sudo, doas, pkexec, runuser, and su in any position on a command line.
+2. DENY recursive rm entirely at the deterministic layer; use scripts/trash.sh for deletions. Any other scoped deletion requires explicit human confirmation.
+3. DENY piping remote scripts into a shell (curl | sh, wget | sh) and download-then-execute sequences (fetch to file, then run or chmod+x).
+4. DENY force-push (git push --force*, git push -f*, git push --mirror*) and history rewrite (git reset --hard*, git clean -fd*).
+5. DENY raw device writes (dd if=*, dd of=*), filesystem creation (mkfs*), partitioning tools, and system power commands (shutdown*, reboot*, poweroff*, halt*).
+6. DENY wholesale permission changes (chmod -R 777 *, chmod -R 000 *, chown -R *).
+7. APPROVE read-only git (status/diff/log) and lint/format commands without escalation. Test runners (pytest, npm test, cargo test, go test) are APPROVED only inside scripts/run-sandbox.sh or scripts/bwrap-shell.sh; unsandboxed test execution ESCALATES because package hooks and scripts run arbitrary code.
+8. ESCALATE anything touching /etc, /boot, /root, /mnt, or global shell configs, and destructive deletions outside the working tree.
+9. RUN "$HOME/src/hermes-config/scripts/hardline-check.sh" '<command>' before executing any command that is not already deny-listed; BLOCK if it exits non-zero. If the scanner cannot be executed, treat the command as BLOCKED.
 ```
 
 Supporting config (all verified live):
@@ -370,7 +388,7 @@ dangerous substrings anywhere on a command line (defense-in-depth at the shell l
 ## <a id="recovery"></a>📋 1-Click Recovery / Installation Guide
 
 > **Goal:** go from a wiped machine to a fully GREEN audit
-> (`bash ~/src/hermes-config/scripts/readiness-check.sh` → `53 pass, 0 fail, 6 info`, exit 0).
+> (`bash ~/src/hermes-config/scripts/readiness-check.sh` → `56 pass, 0 fail, 7 info`, exit 0).
 >
 > Commands marked **`[PowerShell]`** run on Windows; everything else runs inside WSL.
 > The agent itself cannot run `sudo` by policy — privileged steps are for *you* to run.
@@ -424,20 +442,20 @@ export HERMES_HOME="$HOME/.config/hermes"
 
 ### Phase 2 — Install Hermes Agent
 
-Official one-liner (recommended for recovery; this machine is a git install pinned to
-`d0b87da` — the one-liner is the supported path):
+Official one-liner (recommended for recovery; this machine is a git install at
+**v0.20.0**, HEAD `0957277`):
 
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
-# Pin the restored install to the audited commit (parity with this machine):
-cd ~/.hermes/hermes-agent && git fetch --tags && git checkout d0b87da
-# re-run the repo's install step per Hermes docs, then verify:
+# NOTE: the one-liner installs a launcher/venv, not a git checkout — there is
+# no `git checkout <pin>` step. For a git install, verify the commit:
+#   git -C ~/.hermes/hermes-agent rev-parse --short HEAD   # -> 0957277 (audited)
 ```
 
 Verify:
 
 ```bash
-hermes --version      # MUST print v0.19.1 before proceeding
+hermes --version      # MUST print v0.20.0 before proceeding
 hermes doctor         # config health check
 ```
 
@@ -495,101 +513,17 @@ ln -sf ~/src/hermes-config/scripts/hermes-project-init ~/bin/hermes-project-init
 ```bash
 cp ~/.config/hermes/config.yaml ~/.config/hermes/config.yaml.bak
 
-python3 - <<'PY'
-import os, sys, tempfile, yaml
+# The canonical deny list is version-controlled in the repo:
+#   references/deny-patterns.json   (164 patterns, 2026-08-07-r15)
+# scripts/update-config-deny.py MERGES it into config.yaml (never drops live
+# patterns), restores the security/logging keys, and enables hardline-gate.
+# It is idempotent and atomic (tempfile + os.replace). Requires PyYAML:
+#   sudo apt install -y python3-yaml
+HERMES_HOME="$HERMES_HOME" python3 scripts/update-config-deny.py
 
-home = os.environ.get('HERMES_HOME') or os.path.expanduser('~/.hermes')
-p = os.path.join(home, 'config.yaml')
-if not os.path.isfile(p):
-    sys.exit('FATAL: %s not found — set HERMES_HOME or run hermes setup' % p)
-with open(p) as fh:
-    cfg = yaml.safe_load(fh) or {}
-if not isinstance(cfg, dict):
-    sys.exit('FATAL: config.yaml is not a mapping')
-
-DENY = [
-    # legacy 71 (R-02 baseline, unchanged)
-    'rm -rf /', 'rm -rf ~', 'sudo *',
-    'chmod -R 777 *', 'chown -R *',
-    'curl * | *sh', 'wget * | *sh',
-    'git push --force*', 'git reset --hard*', 'git clean -fd*',
-    'dd if=*', 'mkfs*', 'shutdown*', 'reboot*',
-    'git checkout -- .', 'git branch -D*', 'git rebase -i*',
-    'systemctl stop*', 'systemctl disable*', 'iptables -F*',
-    'docker system prune*', 'kubectl delete*',
-    'terraform destroy*', 'pulumi destroy*',
-    'ansible-playbook --check=false*', 'fdisk /dev*', 'parted /dev*',
-    'curl *|*sh', 'wget *|*sh',
-    'curl * | *python*', 'curl * | *node*', 'curl * | *ruby*', 'curl * | *perl*',
-    'wget * | *python*', 'wget * | *node*', 'wget * | *ruby*', 'wget * | *perl*',
-    '/usr/bin/sudo *', '/bin/sudo *',
-    'env sudo *', '/usr/bin/env sudo *',
-    'rm -rf /*', 'rm -rf ~/*',
-    'git push origin +*', 'git push +*',
-    'find / -delete*', 'find / -exec rm*',
-    'bash -c *', 'sh -c *', 'dash -c *', 'zsh -c *',
-    '/bin/bash -c *', '/bin/sh -c *',
-    'python -c *', 'python3 -c *', 'perl -e *', 'ruby -e *', 'node -e *',
-    '/bin/rm -rf *', '/usr/bin/rm -rf *',
-    'rm -r -f *', 'rm -f -r *',
-    '(sudo *', '(rm -rf *',
-    '/usr/bin/find / -delete*', '/bin/find / -delete*',
-    'find / -exec sudo *', 'find /home -delete*',
-    'env rm -rf *',
-    'eval *', 'exec sudo *',
-    # R4 additions (59): flag/path/wrapper/relative-path variants
-    'rm -fr *', 'rm -rf --no-preserve-root*', 'rm --recursive*',
-    'rm -rf .', 'rm -rf ./', 'rm -rf ..*', 'rm -fr ..*',
-    'doas *', 'pkexec *', 'runuser *', 'su -c *', 'su root*', 'su -*',
-    'command sudo *', 'env -i sudo *', 'nice sudo *', 'nohup sudo *',
-    'timeout * sudo *', 'xargs sudo *',
-    'poweroff*', 'halt*', 'init 0*', 'init 6*',
-    'systemctl poweroff*', 'systemctl reboot*', 'systemctl halt*',
-    'systemctl isolate*', 'telinit *',
-    '/sbin/shutdown*', '/sbin/reboot*', '/usr/sbin/shutdown*',
-    '/usr/sbin/reboot*', '/sbin/mkfs*',
-    '/usr/sbin/mkfs*', '/sbin/fdisk*', '/usr/sbin/fdisk*',
-    '/sbin/parted*', '/usr/sbin/parted*', 'dd of=*',
-    'git push -f*', 'git push --mirror*', 'git push --delete*',
-    'git push origin --delete*', 'git push origin :*',
-    'git restore .*', 'git checkout .*',
-    'git stash clear*', 'git update-ref -d*',
-    'find / -*delete*', 'find /home -*delete*',
-    'find / -*exec rm*', 'find / -*exec sudo*',
-    'at *', 'batch *', 'systemd-run *',
-    'crontab -r*', 'history -c*', 'shred *',
-    'chmod -R 000 *',
-]
-
-POLICY = '''Production shell policy. Guardian MUST follow:
-1. DENY sudo, doas, pkexec, runuser, and su in any position on a command line.
-2. DENY recursive rm entirely at the deterministic layer; use scripts/trash.sh for deletions. Any other scoped deletion requires explicit human confirmation.
-3. DENY piping remote scripts into a shell (curl | sh, wget | sh) and download-then-execute sequences (fetch to file, then run or chmod+x).
-4. DENY force-push (git push --force*, git push -f*, git push --mirror*) and history rewrite (git reset --hard*, git clean -fd*).
-5. DENY raw device writes (dd if=*, dd of=*), filesystem creation (mkfs*), partitioning tools, and system power commands (shutdown*, reboot*, poweroff*, halt*).
-6. DENY wholesale permission changes (chmod -R 777 *, chmod -R 000 *, chown -R *).
-7. APPROVE read-only git (status/diff/log) and lint/format commands without escalation. Test runners (pytest, npm test, cargo test, go test) are APPROVED only inside scripts/run-sandbox.sh or scripts/bwrap-shell.sh; unsandboxed test execution ESCALATES because package hooks and scripts run arbitrary code.
-8. ESCALATE anything touching /etc, /boot, /root, /mnt, or global shell configs, and destructive deletions outside the working tree.
-9. RUN "$HOME/src/hermes-config/scripts/hardline-check.sh" '<command>' before executing any command that is not already deny-listed; BLOCK if it exits non-zero. If the scanner cannot be executed, treat the command as BLOCKED.'''
-
-ap = cfg.setdefault('approvals', {})
-ap['mode'] = 'smart'
-ap['cron_mode'] = 'deny'
-ap['deny'] = DENY
-ap['smart_policy'] = POLICY
-
-sec = cfg.setdefault('security', {})          # MERGE, never replace (H-2)
-sec['redact_secrets'] = True
-sec['tirith_enabled'] = True
-log = cfg.setdefault('logging', {})
-log.setdefault('level', 'INFO')
-
-fd, tmp = tempfile.mkstemp(dir=home, prefix='.config.yaml.', suffix='.tmp')
-with os.fdopen(fd, 'w') as fh:
-    yaml.safe_dump(cfg, fh, sort_keys=False, default_flow_style=False)
-os.replace(tmp, p)                             # atomic swap
-print('OK: %s — %d deny patterns' % (p, len(DENY)))
-PY
+# Install the deterministic hardline gate plugin (C-1) — activates next session:
+mkdir -p "$HERMES_HOME/plugins/hardline-gate"
+cp -r plugins/hardline-gate/. "$HERMES_HOME/plugins/hardline-gate/"
 
 hermes config get approvals.mode          # -> smart
 ```
@@ -667,12 +601,15 @@ sudo systemctl restart docker
 git clone https://github.com/mendableai/firecrawl.git ~/src/firecrawl
 cd ~/src/firecrawl
 cp apps/api/.env.example .env
-# Append at the END of .env — docker compose uses the LAST occurrence:
-printf 'USE_DB_AUTHENTICATION=false\nTEST_API_KEY=fc-local-secret-key-2026\nPORT=3002\n' >> .env
+# Append at the END of .env — docker compose uses the LAST occurrence.
+# R-14/R-15: PORT MUST bind loopback only (127.0.0.1:3002). PORT=3002 alone
+# re-exposes the scraping API (with its auth key) on 0.0.0.0 — the readiness
+# check fails if this regresses.
+printf 'USE_DB_AUTHENTICATION=false\nTEST_API_KEY=fc-local-secret-key-2026\nPORT=127.0.0.1:3002\n' >> .env
 
 # 3. Launch + verify:
 docker compose up -d
-docker compose ps                     # api on 0.0.0.0:3002->3002/tcp
+docker compose ps                     # api on 127.0.0.1:3002->3002/tcp
 # GET /test -> 404 "Cannot GET /test" is NORMAL; /v1/scrape is the real check:
 curl -s -X POST http://localhost:3002/v1/scrape \
   -H 'Authorization: Bearer fc-local-secret-key-2026' \
@@ -704,7 +641,7 @@ bash ~/src/hermes-config/scripts/readiness-check.sh
 Expected on a fully restored machine:
 
 ```text
-readiness: 53 pass, 0 fail, 6 info     # exit code 0  (any FAIL -> exit code 1)
+readiness: 56 pass, 0 fail, 7 info     # exit code 0  (any FAIL -> exit code 1)
 ```
 
 > The 6 INFO notes are documented gaps or environmental facts, not failures:
@@ -792,7 +729,7 @@ context pollution; base wins on safety, persona wins on method.
 
 ### Activating a persona at runtime
 
-There is **no `hermes --system-prompt` CLI flag** (verified against v0.19.1
+There is **no `hermes --system-prompt` CLI flag** (verified against v0.20.0
 source). The supported mechanism is the `HERMES_EPHEMERAL_SYSTEM_PROMPT`
 environment variable, read at session start and injected as the **context tier —
 on top of** SOUL.md (which stays the stable identity tier). Verified end-to-end
@@ -900,6 +837,33 @@ tooling before inventing commands.
 
 ---
 
+## <a id="mattpocock-skills"></a>🧠 Matt Pocock Engineering & Productivity Skills
+
+[Skills for Real Engineers](https://github.com/mattpocock/skills) (mattpocock/skills,
+commit `84fdeff`) — 18 engineering + 7 productivity agent skills, integrated 2026-08-08.
+
+| Item | Value |
+|---|---|
+| Source | `https://github.com/mattpocock/skills.git` → clone at `~/src/mattpocock-skills` |
+| Engineering | `$HERMES_HOME/skills/mattpocock-engineering/` — 18 skills: ask-matt, code-review, codebase-design, diagnosing-bugs, domain-modeling, grill-with-docs, implement, improve-codebase-architecture, prototype, research, resolving-merge-conflicts, setup-matt-pocock-skills, tdd, to-spec, to-tickets, triage, wayfinder, wizard |
+| Productivity | `$HERMES_HOME/skills/mattpocock-productivity/` — 7 skills: grill-me, grilling, handoff, teach, to-questionnaire, wait-what, writing-for-agents |
+| Mechanism | Absolute symlinks → `~/src/mattpocock-skills/skills/<group>/<skill>` (whole dirs, so supporting files such as `tests.md` / `mocking.md` resolve) |
+| Discovery | Verified live: Hermes skill discovery lists both categories (`mattpocock-engineering`, `mattpocock-productivity`) |
+| Audit impact | None — readiness re-verified after integration: 56 PASS / 0 FAIL / 7 INFO |
+
+Layout note: skills are nested under category dirs instead of flat at the top level
+because mattpocock ships a skill named `research`, and `$HERMES_HOME/skills/research/`
+is already an occupied category (arxiv, blogwatcher, …). Nesting mirrors the bundled
+layout (`autonomous-ai-agents/`, `software-development/`, …) and keeps all 25 skills
+discoverable without clobbering anything.
+
+Update: `git -C ~/src/mattpocock-skills pull` — symlinks resolve into the live clone, so
+upstream updates flow through on the next session. Remove: unlink the 25 symlinks and
+delete the two category dirs. All SKILL.md files conform to the agentskills.io standard
+(YAML frontmatter with `name` + `description`; validated 2026-08-08).
+
+---
+
 ## <a id="audit"></a>📊 Automated Audit Script
 
 `scripts/readiness-check.sh` is a **read-only** machine audit (spec 7). It never
@@ -910,15 +874,15 @@ FAIL, `1` when any item FAILs.
 bash ~/src/hermes-config/scripts/readiness-check.sh
 ```
 
-### What it checks (59 items — latest verified result: 53 PASS / 0 FAIL / 6 INFO)
+### What it checks (63 items — latest verified result: 56 PASS / 0 FAIL / 7 INFO)
 
 | Section | PASS | INFO | Sample checks |
 |---|---:|---:|---|
 | WSL Environment | 7 | 0 | WSL2 kernel, distro updated, systemd, non-root user, `.wslconfig` limits, `appendWindowsPath=false`, `~/src` on ext4 |
-| Hermes Configuration | 14 | 2 | config versioned, prompts modular, `approvals.mode=smart`, deny list ≥ 130, `.agentignore`+`.gitignore`, `redact_secrets`, logs present |
-| Agent Tooling (RTK / LCM) | 7 | 0 | RTK plugin installed + enabled, `rtk` binary on PATH; hermes-lcm installed + enabled with redaction gate (`LCM_SENSITIVE_PATTERNS_ENABLED`) |
+| Hermes Configuration | 14 | 2 | config versioned, prompts modular, `approvals.mode=smart`, deny list ≥ 137, `.agentignore`+`.gitignore`, `redact_secrets`, logs present |
+| Agent Tooling (RTK / LCM / hardline-gate) | 9 | 0 | RTK plugin installed + enabled, `rtk` binary on PATH; hermes-lcm installed + enabled with redaction gate (`LCM_SENSITIVE_PATTERNS_ENABLED`); hardline-gate plugin installed + enabled (deterministic scanner, C-1) |
 | Coding Workflow | 6 | 2 | git identity, branching strategy, linters present, validation required by SOUL.md, backup procedure defined |
-| Safety | 16 | 0 | no passwordless sudo, deny ≥ 130, hardline scanner + bypass corpus, `.env` 600, sandbox + bwrap, WSL export backup + freshness, pre-commit/gitleaks, git remote, `.gitignore` |
+| Safety | 17 | 1 | no passwordless sudo, deny ≥ 137, hardline scanner + bypass corpus, `.env` 600, sandbox + bwrap, WSL export backup + freshness, pre-commit/gitleaks, git remote, `.gitignore`, Firecrawl loopback binding (INFO: TERMINAL_ENV=local SSRF note) |
 | Non-Coding Use | 3 | 2 | report dir, research mode, sysadmin mode (doc/log tools are optional INFO) |
 
 The live reference for the human-readable checklist is `references/readiness-checklist.md`;
@@ -928,7 +892,7 @@ the script is the source of truth — the doc is a snapshot.
 
 Run the audit before letting Hermes do real work, after any system change, and as the
 final step of every recovery/restore. A commit to this repo should always be able to
-say "readiness: 53 pass, 0 fail, 6 info" (exit 0 — FAIL=0 is the green definition).
+say "readiness: 56 pass, 0 fail, 7 info" (exit 0 — FAIL=0 is the green definition).
 
 ---
 
@@ -971,7 +935,7 @@ Only for local, unpushed work; never force-push shared history (denied by policy
 2. Install Hermes + OpenCode Zen credentials (Phase 2–3).
 3. Clone this repo, re-wire symlinks, restore `config.yaml` + `.agentignore` (Phase 4–5).
 4. Install system tooling (Phase 6).
-5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **53 pass, 0 fail, 6 info** (Phase 7).
+5. `bash ~/src/hermes-config/scripts/readiness-check.sh` → **56 pass, 0 fail, 7 info** (Phase 7).
 6. Re-import the WSL tar if you want the old filesystem state, or restore project data
    from git remotes.
 
@@ -1025,9 +989,9 @@ Each `references/*.md` is one spec section (3–7), kept current with the live m
 
 ## <a id="license"></a>License
 
-MIT (as declared in the skill metadata for this repo's components). A `LICENSE` file
-should be added before publishing the repository publicly.
+MIT (as declared in the skill metadata for this repo's components). The
+[`LICENSE`](LICENSE) file is included (added 2026-08-07, R-15).
 
 ---
 
-*Maintained by NikaNats. Last audit: 2026-08-07 — `readiness: 53 pass, 0 fail, 6 info` (the script is the source of truth; snapshot dated 2026-08-07).*
+*Maintained by NikaNats. Last audit: 2026-08-08 — `readiness: 56 pass, 0 fail, 7 info` (re-verified after Matt Pocock skills integration; R-15 snapshot 2026-08-07; the script is the source of truth).*
