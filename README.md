@@ -21,6 +21,7 @@
 - [🎭 System Prompts & Personas Architecture](#personas)
 - [🛠️ Tools and Sandboxing](#tools)
 - [🧠 Matt Pocock Engineering & Productivity Skills](#mattpocock-skills)
+- [🟦 Microsoft .NET Agent Skills](#dotnet-skills)
 - [📊 Automated Audit Script](#audit)
 - [💾 Backup and Disaster Recovery](#backup)
 - [References Index](#references)
@@ -861,6 +862,28 @@ Update: `git -C ~/src/mattpocock-skills pull` — symlinks resolve into the live
 upstream updates flow through on the next session. Remove: unlink the 25 symlinks and
 delete the two category dirs. All SKILL.md files conform to the agentskills.io standard
 (YAML frontmatter with `name` + `description`; validated 2026-08-08).
+
+---
+
+## <a id="dotnet-skills"></a>🟦 Microsoft .NET Agent Skills
+
+Official [.NET Agent Skills](https://github.com/dotnet/skills) suite (dotnet/skills,
+commit `aa3c4abc`) — 96 skills across 16 plugins, integrated 2026-08-08.
+
+| Item | Value |
+|---|---|
+| Source | `https://github.com/dotnet/skills.git` → clone at `~/src/dotnet-skills` |
+| Layout | `$HERMES_HOME/skills/<plugin>/` — one category dir per plugin |
+| Plugins (16) | dotnet (1), dotnet-advanced (3), dotnet-ai (1), dotnet-aspnetcore (4), dotnet-blazor (9), dotnet-data (2), dotnet-diag (7), dotnet-experimental (3), dotnet-maui (8), dotnet-msbuild (19), dotnet-nuget (1), dotnet-template-engine (6), dotnet-test (20), dotnet-test-migration (5), dotnet-upgrade (6), dotnet11 (1) |
+| Mechanism | Absolute symlinks → `~/src/dotnet-skills/plugins/<plugin>/skills/<skill>` — whole dirs, so `references/` `scripts/` `assets/` (34 dirs) resolve |
+| Discovery | Verified live: Hermes skill discovery lists every `dotnet-*` category |
+| Audit impact | None — readiness re-verified after integration: 56 PASS / 0 FAIL / 7 INFO |
+
+All 96 SKILL.md files validated against the agentskills.io standard (frontmatter:
+`name` + `description` + `license`; 0 errors). `dotnet-experimental` and `dotnet11`
+ship upstream as preview/experimental content. Update: `git -C ~/src/dotnet-skills pull`
+— symlinks resolve into the live clone. Remove: unlink the 96 symlinks and delete the
+16 category dirs.
 
 ---
 
