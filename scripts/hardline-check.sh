@@ -15,6 +15,7 @@ CMD="$(printf '%s\n' "$CMD" | tr '\n\r\t' ' ' | sed -E 's/[[:space:]]+/ /g')"
 
 block() { echo "HARDLINE BLOCK: $1" >&2; exit 1; }
 scan()  { printf '%s\n' "$CMD" | grep -Eq "$1"; }
+scan_i() { printf '%s\n' "$CMD" | grep -Eiq "$1"; }  # case-insensitive (SQL keywords)
 
 # Q = a single or double quote character (used by quote-tolerant rules).
 Q='["'"'"']'
@@ -60,7 +61,7 @@ scan '(^|[;&|(/[:space:]])[[:space:]]*\\?((sudo|doas|pkexec|runuser)([[:space:]]
   && block "privilege escalation (sudo/doas/pkexec/runuser/su)"
 
 # 7. Power, runlevel, fs/device tools ANYWHERE; dd with if= or of=
-scan '(^|[;&|/[:space:]])((shutdown|reboot|poweroff|halt|telinit|mkfs[a-z0-9.]*|fdisk|parted)([[:space:]]|$)|init[[:space:]]+[06]([[:space:]]|$)|dd[[:space:]]+(if|of)=)' \
+scan '(^|[;&|/[:space:]])((shutdown|reboot|poweroff|halt|telinit|mkfs[a-z0-9.]*|fdisk|parted)([[:space:]]|$)|init[[:space:]]+[06]([[:space:]]|$)|dd[[:space:]]+(if|of)=|loginctl[[:space:]]+(poweroff|reboot|halt)([[:space:]]|$))' \
   && block "system power / filesystem / raw-device operation"
 
 # 8. find on dangerous roots with -delete / -exec|-ok of dangerous cmds
@@ -116,5 +117,21 @@ scan 'docker[[:space:]]+cp[^;&|]+[[:space:]]+(/etc/|/boot/|/root|/usr/|/bin/|/sb
 #     and the legacy `service <unit> stop` wrapper.
 scan '(^|[;&|/[:space:]])(systemctl[[:space:]]+(stop|disable|restart|start|kill)[[:space:]]+|service[[:space:]]+[a-zA-Z0-9_.-]+[[:space:]]+(stop|disable|restart|start|kill)([[:space:]]|$))' \
   && block "service lifecycle operation"
+
+# 15. Destructive SQL ANYWHERE on the line (psql/mysql/sqlite3 -c / -e forms).
+#     Case-insensitive: SQL keywords are case-insensitive. DROP/TRUNCATE always
+#     block; DELETE/UPDATE block unless a WHERE clause is present.
+scan_i "(^|[[:space:];\"'(])(drop[[:space:]]+(table|database|schema|index)|truncate[[:space:]]+)" \
+  && block "destructive SQL (DROP/TRUNCATE)"
+if scan_i "(^|[[:space:];\"'(])(delete[[:space:]]+from|update[[:space:]]+[a-zA-Z0-9_.\"']+[[:space:]]+set)"; then
+  scan_i "[[:space:]]where[[:space:]]" || block "DELETE/UPDATE without WHERE clause"
+fi
+
+# 16. Destructive statements inside referenced .sql files (psql -f, mysql < file)
+for f in $(printf '%s\n' "$CMD" | grep -oE '[A-Za-z0-9_./-]+\.sql' || true); do
+  [ -f "$f" ] || continue
+  grep -Eiq 'drop[[:space:]]+(table|database|schema|index)|truncate[[:space:]]+|delete[[:space:]]+from' "$f" \
+    && block "SQL file '$f' contains destructive statements"
+done
 
 exit 0

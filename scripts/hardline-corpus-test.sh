@@ -107,6 +107,21 @@ PY'
 t ALLOW 'node --version'
 t ALLOW 'grep -rn "sudo" scripts/'
 
+# ── P4B: SQL destructive-statement coverage (rules 15/16) ─────────────
+FIXSQL="$(mktemp /tmp/hardline-corpus-sql.XXXXXX.sql)"
+printf 'DROP TABLE users;\n' > "$FIXSQL"
+trap 'rm -f "$FIXSQL"' EXIT
+t BLOCK 'psql -c "DROP TABLE users"'
+t BLOCK 'psql -c "drop table users"'
+t BLOCK 'mysql -e "TRUNCATE TABLE t"'
+t BLOCK 'sqlite3 app.db "DELETE FROM t"'
+t BLOCK 'sqlite3 app.db "UPDATE t SET x=1"'
+t BLOCK "psql -f $FIXSQL"
+t ALLOW 'psql -c "DELETE FROM t WHERE id=1"'
+t ALLOW 'psql -c "UPDATE t SET x=1 WHERE id=2"'
+t ALLOW 'mysql -e "SELECT 1"'
+t ALLOW 'sqlite3 app.db "SELECT * FROM t"'
+
 # ── Must ALLOW (benign; scoped work stays with Guardian) ──────────────
 t ALLOW git status --short --branch
 t ALLOW git diff
