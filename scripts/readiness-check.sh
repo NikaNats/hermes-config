@@ -67,6 +67,21 @@ case "$(readlink -f "$HOME/src")" in
   *)      ok "source code on Linux filesystem (~/src)" ;;
 esac
 
+# Landlock path-based MAC — ABI probe (syscall 444, LANDLOCK_CREATE_RULESET_VERSION
+# flag=1; returns the ABI version only when the LSM is compiled in AND registered at
+# boot; errno 38=ENOSYS / 95=EOPNOTSUPP when absent).
+LL=$(python3 -c "
+import ctypes
+libc = ctypes.CDLL(None, use_errno=True)
+r = libc.syscall(444, 0, 0, 1)
+print(r if r >= 0 else 'ERRNO' + str(ctypes.get_errno()))
+" 2>/dev/null || true)
+case "$LL" in
+  ERRNO*) note "Landlock unavailable (syscall errno ${LL#ERRNO}) — compensating controls active" ;;
+  [0-9]*) ok "Landlock ABI v$LL available (path-based MAC)" ;;
+  *) note "Landlock probe inconclusive" ;;
+esac
+
 # ---------------------------------------------------- Hermes config
 sec "Hermes Configuration"
 git -C "$REPO" ls-files 2>/dev/null | grep -q '^SOUL.md$' \
